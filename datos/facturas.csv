@@ -1,0 +1,41 @@
+invoice_id,cliente,monto,estado,fecha_emision,metodo_pago
+F-2024-901,Martín Gómez,2557.99,cobro_duplicado,2024-09-21,tarjeta_debito
+F-2024-902,Sofía Rodríguez,9078.56,cobro_duplicado,2024-09-19,tarjeta_debito
+F-2024-903,Lucía Benítez,1340.0,cobro_duplicado,2024-09-25,transferencia
+F-2024-904,Federico Arias,18720.4,cobro_duplicado,2024-09-27,tarjeta_credito
+F-2024-905,Mariana Sosa,640.15,cobro_duplicado,2024-10-01,debito_automatico
+F-2024-906,Nicolás Peralta,33450.0,cobro_duplicado,2024-10-03,transferencia
+F-2024-907,Agustina Ruiz,4899.9,cobro_duplicado,2024-10-05,tarjeta_debito
+F-2024-908,Gonzalo Medina,12100.75,cobro_duplicado,2024-10-06,tarjeta_credito
+F-2024-909,Camila Ferreyra,275.3,cobro_duplicado,2024-10-08,tarjeta_debito
+F-2024-910,Ezequiel Domínguez,7630.0,cobro_duplicado,2024-10-09,transferencia
+F-2024-911,Rocío Aguirre,2210.6,cobro_duplicado,2024-10-11,debito_automatico
+F-2024-912,Sebastián Molina,45999.99,cobro_duplicado,2024-10-12,tarjeta_credito
+F-2024-913,Julián Ramírez,88500.0,cobro_duplicado,2024-10-13,transferencia
+F-2024-914,Patricia Villalba,50000.01,cobro_duplicado,2024-10-14,transferencia
+F-2024-915,Hernán Quiroga,134200.0,cobro_duplicado,2024-10-15,transferencia
+F-2024-916,Carla Núñez,1200.5,COBRO_DUPLICADO ,2024-10-16,tarjeta_debito
+F-2024-917,Ignacio Sanabria,3875.25, cobro_Duplicado,2024-10-16,tarjeta_debito
+F-2024-918,Brenda Ojeda,0.0,cobro_duplicado,2024-10-17,transferencia
+F-2024-919,Valentina López,3476.33,pago_correcto,2024-10-14,tarjeta_credito
+F-2024-920,Damián Cabrera,980.0,pago_correcto,2024-10-02,tarjeta_debito
+F-2024-921,Florencia Ibarra,15600.0,pago_correcto,2024-10-04,transferencia
+F-2024-922,Matías Ledesma,2340.8,pago_correcto,2024-10-07,tarjeta_debito
+F-2024-923,Antonella Ríos,7215.45,pago_correcto,2024-10-10,tarjeta_credito
+F-2024-924,Leandro Paz,499.99,pago_correcto,2024-10-11,debito_automatico
+F-2024-925,Josefina Acuña,22800.0,pago_correcto,2024-10-13,transferencia
+F-2024-926,Emiliano Vera,1875.0,Pago_Correcto ,2024-10-15,tarjeta_debito
+F-2024-927,Laura Fernández,57267.83,cobro_excesivo,2024-10-02,tarjeta_debito
+F-2024-928,Ramiro Godoy,8420.0,cobro_excesivo,2024-10-05,tarjeta_credito
+F-2024-929,Silvana Correa,3190.7,cobro_excesivo,2024-10-09,transferencia
+F-2024-930,Marcelo Duarte,67000.0,cobro_excesivo,2024-10-12,transferencia
+F-2024-931,Diego Pérez,853.69,pago_rechazado,2024-09-02,tarjeta_debito
+F-2024-932,Natalia Escobar,4410.0,pago_rechazado,2024-10-06,tarjeta_credito
+F-2024-933,Franco Maldonado,12999.0,pago_rechazado,2024-10-14,transferencia
+F-2024-934,Tomás Ibarra,4500.0,reintegro_parcial,2024-10-08,tarjeta_debito
+F-2024-935,Micaela Roldán,9300.0,reintegro_parcial,2024-10-16,transferencia
+F-2024-936,Alan Figueroa,2050.0,pago_pendiente,2024-10-17,transferencia
+F-2024-937,Daniela Ponce,760.4,pago_pendiente,2024-10-18,debito_automatico
+F-2024-938,Cristian Bustos,31200.0,contracargo_en_curso,2024-10-10,tarjeta_credito
+F-2024-939,Yamila Ávalos,5680.0,contracargo_en_curso,2024-10-18,tarjeta_credito
+F-2024-940,Pablo Miranda,14750.0,en_revision_fraude,2024-10-19,tarjeta_credito

@@ -1,0 +1,46 @@
+solicitud_id,fecha,solicitante,canal,texto
+S-001,2024-10-20,Martín Gómez,email,"Hola, me cobraron dos veces la factura F-2024-901. Quiero que me devuelvan la diferencia."
+S-002,2024-10-20,Sofía Rodríguez,web,Buenas. Revisando el resumen veo el cargo de la F-2024-902 duplicado. Pido el reintegro.
+S-003,2024-10-20,Lucía Benítez,email,"Buen día, la factura F-2024-903 aparece dos veces en mi resumen. Solicito la devolución."
+S-004,2024-10-21,Federico Arias,telefono,"Necesito el reintegro de la F-2024-904, me la debitaron por duplicado el mismo día."
+S-005,2024-10-21,Mariana Sosa,web,Hola! Vi un doble débito de la factura F-2024-905. ¿Me lo pueden devolver?
+S-006,2024-10-21,Nicolás Peralta,email,Solicito reintegro por cobro duplicado de la F-2024-906. Adjunto comprobantes.
+S-007,2024-10-22,Agustina Ruiz,web,La F-2024-907 se cobró dos veces. Pido que me acrediten la diferencia.
+S-008,2024-10-22,Gonzalo Medina,email,"Estimados, la factura F-2024-908 figura duplicada en mi tarjeta. Pido reintegro."
+S-009,2024-10-22,Camila Ferreyra,web,"Me cobraron dos veces la F-2024-909, es poca plata pero igual la quiero de vuelta."
+S-010,2024-10-23,Ezequiel Domínguez,telefono,"Pido devolución de la F-2024-910, doble transferencia por el mismo concepto."
+S-011,2024-10-23,Rocío Aguirre,web,"hola, me duplicaron el cobro de la f-2024-911, necesito la devolucion"
+S-012,2024-10-23,Sebastián Molina,email,"Buenas tardes. Escribo por la factura 2024-912, que me llegó dos veces. Solicito el reintegro."
+S-013,2024-10-24,Ignacio Sanabria,web,"Che, la F 2024 917 me la cobraron dos veces. Devuélvanmela por favor."
+S-014,2024-10-24,Julián Ramírez,email,"Buen día, la F-2024-913 se duplicó. Solicito el reintegro del importe completo."
+S-015,2024-10-24,Patricia Villalba,email,"Pido devolución de la factura F-2024-914, cobrada dos veces por transferencia."
+S-016,2024-10-25,Hernán Quiroga,telefono,"Me debitaron dos veces la F-2024-915. Es un monto muy alto, necesito solución urgente."
+S-017,2024-10-25,Brenda Ojeda,web,"Solicito el reintegro de la F-2024-918, figura duplicada."
+S-018,2024-10-25,Valentina López,web,"Me cobraron dos veces la F-2024-919, necesito la devolución urgente por favor."
+S-019,2024-10-26,Damián Cabrera,email,"No reconozco el cargo de la factura F-2024-920, quiero que me lo reintegren."
+S-020,2024-10-26,Florencia Ibarra,telefono,"Pido la devolución de la F-2024-921, me parece que está mal cobrada."
+S-021,2024-10-26,Matías Ledesma,web,Solicito reintegro de la F-2024-922 por cobro duplicado.
+S-022,2024-10-27,Antonella Ríos,email,"Buenas, quiero el reintegro de la factura F-2024-923. Creo que pagué de más."
+S-023,2024-10-27,Laura Fernández,email,La factura F-2024-927 me llegó por un monto muchísimo mayor al que corresponde.
+S-024,2024-10-27,Ramiro Godoy,web,Me cobraron de más en la F-2024-928. Pido que revisen y me devuelvan la diferencia.
+S-025,2024-10-28,Silvana Correa,telefono,El importe de la F-2024-929 no coincide con lo que contraté. Solicito reintegro.
+S-026,2024-10-28,Marcelo Duarte,email,"Solicito revisión y reintegro de la F-2024-930, el monto es desproporcionado."
+S-027,2024-10-28,Diego Pérez,web,Mi pago de la F-2024-931 fue rechazado y igual me lo descontaron. Pido reintegro.
+S-028,2024-10-29,Natalia Escobar,email,La F-2024-932 figura rechazada pero me aparece el débito. Quiero la devolución.
+S-029,2024-10-29,Franco Maldonado,telefono,Pago rechazado en la F-2024-933 y el dinero no volvió. Solicito reintegro.
+S-030,2024-10-29,Tomás Ibarra,web,Sobre la F-2024-934: me corresponde un reintegro parcial según lo hablado.
+S-031,2024-10-30,Micaela Roldán,email,Pido el reintegro parcial acordado de la factura F-2024-935.
+S-032,2024-10-30,Alan Figueroa,web,Quiero cancelar y que me devuelvan lo de la F-2024-936.
+S-033,2024-10-30,Cristian Bustos,email,Inicié un contracargo por la F-2024-938 pero prefiero resolverlo con ustedes. Pido reintegro.
+S-034,2024-10-31,Pablo Miranda,telefono,Necesito el reintegro de la F-2024-940 lo antes posible.
+S-035,2024-10-31,Rodrigo Sena,web,"Quiero el reintegro de la factura F-2024-916, fue un cobro duplicado."
+S-036,2024-10-31,Martín Gómez,email,"Además de lo mío, pido la devolución de la F-2024-907 que quedó pendiente."
+S-037,2024-11-01,Verónica Lell,web,"Solicito la devolución de la F-2024-912, se cobró dos veces."
+S-038,2024-11-01,Rodrigo Sena,email,"Pido la devolución de la factura F-2024-999, me la cobraron mal."
+S-039,2024-11-01,Elena Bracco,web,"Reclamo por la F-2023-115, cobro duplicado del año pasado."
+S-040,2024-11-02,Paula Vidal,telefono,"Hola! Me hicieron un cobro que no reconozco el mes pasado, quiero que me lo devuelvan."
+S-041,2024-11-02,Gastón Ferrari,web,"Buenas, tengo un problema con una factura y necesito que me reintegren la plata."
+S-042,2024-11-02,Luz Maidana,email,Me cobraron dos veces este mes. Adjunto captura del resumen. Espero respuesta.
+S-043,2024-11-03,Agustina Ruiz,email,Ya reclamé por la F-2024-907 y sigue sin resolverse; también quiero revisar la F-2024-919.
+S-044,2024-11-03,Martín Gómez,web,Vuelvo a escribir por la factura F-2024-901: el cobro duplicado sigue sin devolverse.
+S-045,2024-11-04,Lucía Benítez,telefono,"Insisto con el reintegro de la F-2024-903, no me llegó la acreditación."
