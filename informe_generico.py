@@ -18,7 +18,7 @@ from plotly.offline import get_plotlyjs
 import analisis_generico as A          # ejecuta el análisis completo y deja sus resultados disponibles
 
 df, crudo, N, MONTO, rol = A.df, A.crudo, A.N, A.MONTO, A.rol
-SALIDA = os.path.join(A.SALIDA, "informe.html")
+SALIDA = A.ruta_salida("informe.html")
 MAX_PUNTOS = 20000        # máximo de puntos en los gráficos de dispersión
 MAX_ATIPICOS = 300        # máximo de atípicos dibujados por caja
 MAX_CAMPOS = 6            # máximo de categorías (y de fechas) que se grafican

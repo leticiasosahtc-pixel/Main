@@ -35,6 +35,19 @@ def log(texto=""):
     print(texto)
     resumen.append(str(texto))
 
+def ruta_salida(nombre):
+    """Ruta dentro de la carpeta de salida. Si el archivo está abierto en otro programa (Excel lo bloquea),
+    usa un nombre alternativo en vez de cortar el análisis al final."""
+    ruta = os.path.join(SALIDA, nombre)
+    try:
+        open(ruta, "a").close()
+    except PermissionError:
+        base, ext = os.path.splitext(nombre)
+        ruta = os.path.join(SALIDA, f"{base}_{pd.Timestamp.today():%Y%m%d_%H%M%S}{ext}")
+        log(f"\nATENCIÓN: {nombre} está abierto en otro programa y no se puede reemplazar. "
+            f"Se guarda como {os.path.basename(ruta)}. Cerrar el archivo antes de volver a correr.")
+    return ruta
+
 def tabla(t):
     return t.to_string() if len(t) else "(sin datos)"
 
@@ -192,7 +205,7 @@ for c, n, mk in controles:
     problema.loc[mk] = problema.loc[mk] + f"{c}: {n}; "
 casos = crudo[problema != ""].copy()
 casos.insert(0, "PROBLEMA", problema[problema != ""].str.rstrip("; "))
-casos.to_csv(os.path.join(SALIDA, "casos_con_problemas.txt"), sep="|", index=False, encoding="utf-8")
+casos.to_csv(ruta_salida("casos_con_problemas.txt"), sep="|", index=False, encoding="utf-8")
 log(f"Registros con al menos un problema: {len(casos):,} de {N:,} ({len(casos) / N * 100:.1f}%)")
 
 # ---------------------------------------------------------------- 4. ESTADÍSTICA DE LOS CAMPOS NUMÉRICOS
@@ -368,7 +381,7 @@ def hoja(nombre):
     usadas.add(final.upper())
     return final
 
-with pd.ExcelWriter(os.path.join(SALIDA, "tablas_analisis.xlsx"), engine="openpyxl") as xl:
+with pd.ExcelWriter(ruta_salida("tablas_analisis.xlsx"), engine="openpyxl") as xl:
     campos.to_excel(xl, sheet_name=hoja("CAMPOS"))
     tabla_ctrl.to_excel(xl, sheet_name=hoja("CONTROLES"), index=False)
     for nombre, t in tablas.items():
@@ -379,6 +392,6 @@ with pd.ExcelWriter(os.path.join(SALIDA, "tablas_analisis.xlsx"), engine="openpy
         vc.to_excel(xl, sheet_name=hoja("FREC_" + c), index=False)
     casos.head(1_000_000).to_excel(xl, sheet_name=hoja("CASOS_CON_PROBLEMAS"), index=False)
 
-with open(os.path.join(SALIDA, "resumen.txt"), "w", encoding="utf-8") as f:
+with open(ruta_salida("resumen.txt"), "w", encoding="utf-8") as f:
     f.write("\n".join(resumen))
 print(f"\nListo. Resultados en la carpeta '{SALIDA}'")
