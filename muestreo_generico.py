@@ -10,8 +10,10 @@ Uso:
 Opciones (todas opcionales; si no se indican valen los PARÁMETROS de abajo):
     --clave COLUMNA        junta en un solo registro todas las filas con el mismo valor de esa columna
                            (sin --clave solo se juntan filas idénticas, salvo por PROBLEMA)
-    --separar duplicado    los registros cuyo PROBLEMA contiene ese texto forman su propio estrato aunque tengan
-                           otros problemas (así se les aplica el mínimo por estrato). Por defecto: duplicado.
+    --separar duplicado    los registros con un problema que contiene ese texto forman su propio estrato aunque
+                           tengan otros problemas (así se les aplica el mínimo por estrato). Un estrato por
+                           problema: "PADRON: duplicado" e "ID_OBJETO: duplicado" van separados; un registro
+                           con dos de esos problemas va al menos frecuente. Por defecto: duplicado.
                            Varios separados por coma; --separar "" para no separar ninguno.
     --completo duplicado   los registros cuyo PROBLEMA contiene ese texto entran TODOS en la muestra
                            (se pueden poner varios separados por coma)
@@ -198,6 +200,8 @@ else:
                  f"archivo no sea una lista de registros.\nColumnas encontradas: {', '.join(datos)}\n"
                  "Si es una lista de registros, indicá cuál los identifica con --clave COLUMNA.")
     for c in ids:
+        if tiene_problema and not pob[COL_PROBLEMA].str.contains(f"{c}: duplicado", regex=False).any():
+            continue            # repetirse no es un problema para este campo (ej. un sujeto con varios objetos)
         valores = distintas[c].replace("", pd.NA).dropna()
         n = int(valores.duplicated(keep=False).sum())
         if n:
@@ -245,11 +249,17 @@ if ESTRATO and ESTRATO.upper() in pob.columns:
         valores = pob[COL_PROBLEMA].where(pob["CANT_PROBLEMAS"] == 1, ESTRATO_VARIOS)
         # Sin esto, un registro duplicado que además tiene otro problema iría a "Más de un problema" y los
         # duplicados no formarían estrato (ni se les aplicaría el mínimo). Gana el primer texto que coincide.
-        ya = pd.Series(False, index=pob.index)
-        for texto in SEPARAR:
-            cumple = ~ya & pob[COL_PROBLEMA].str.contains(texto, case=False, regex=False)
-            valores = valores.mask(cumple, f"Con {texto} (solo o con otros problemas)")
-            ya |= cumple
+        # Un estrato por problema ("PADRON: duplicado", "ID_OBJETO: duplicado"); si un registro tiene dos de
+        # estos problemas, va al menos frecuente, para que los problemas raros no se queden sin casos.
+        es_separable = lambda parte: any(t.lower() in parte.lower() for t in SEPARAR)
+        partes = pob[COL_PROBLEMA].str.split("; ")
+        frecuencia = partes.explode().loc[lambda x: x.map(es_separable)].value_counts()
+        def problema_separado(lista):
+            candidatos = [p for p in lista if p in frecuencia.index]
+            return (min(candidatos, key=lambda p: (frecuencia[p], p)) + " (solo o con otros problemas)"
+                    if candidatos else None)
+        separado = partes.map(problema_separado)
+        valores = valores.mask(separado.notna(), separado)
     else:
         valores = pob[ESTRATO.upper()].replace("", "(vacío)").fillna("(vacío)")
     pob.insert(1, estrato, valores)
@@ -258,6 +268,24 @@ elif ESTRATO:
         sys.exit(f"--estrato {ESTRATO}: no existe. Columnas: {', '.join(datos)}")
     avisos.append(f"No existe la columna {ESTRATO}; se hace muestreo aleatorio simple.")
 ESTRATO_COL = ESTRATO.upper() if estrato else None      # columna real de estratificación (None = ninguna)
+
+# Para cada registro duplicado, con qué otros registros comparte el valor: el auditor necesita verlos juntos
+if tiene_problema:
+    ref = next((c for c in datos if PISTA_ID.search(c)), None)       # cómo nombrar a los otros (ej. ID_OBJETO)
+    for c in datos:
+        con_dup = pob[COL_PROBLEMA].str.contains(f"{c}: duplicado", regex=False)
+        if not con_dup.any():
+            continue
+        quien = pob[ref] if ref and ref != c else pob["FILA_EN_ARCHIVO"].radd("fila ")
+        grupos_dup = pd.DataFrame({"valor": pob.loc[con_dup, c], "quien": quien[con_dup]}).groupby("valor")["quien"]
+        todos = grupos_dup.agg(list)
+        nueva = f"MISMO_{c}_QUE"
+        pob[nueva] = ""
+        pob.loc[con_dup, nueva] = [
+            "; ".join(str(x) for x in todos[v] if x != q)[:500] or "(el otro registro no está en este archivo)"
+            for v, q in zip(pob.loc[con_dup, c], quien[con_dup])]
+        avisos.append(f"Columna {nueva}: para cada registro con {c} duplicado, los otros registros con el mismo valor"
+                      + (f" ({ref})." if ref and ref != c else " (fila del archivo)."))
 
 # Revisión completa: los registros cuyo PROBLEMA contiene alguno de los textos de COMPLETO entran todos
 censo = []

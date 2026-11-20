@@ -9,6 +9,8 @@ Uso:   python analisis_generico.py archivo.txt [opciones]
   --categorias A,B       categorías principales: A es el grupo (ej. CLASE) y B la subcategoría (ej. CATEGORIA)
   --anio COLUMNA         año de origen (ej. AÑO_FABRICACION) ...
   --fecha COLUMNA        ... y fecha de alta (ej. FECHA_ALTA): habilita los controles y gráficos de antigüedad
+  --duplicados A,B       campos que no pueden repetirse (ej. PADRON): se controlan duplicados aunque el campo no
+                         se detecte como identificador
   --ignorar A,B          campos que se quitan del análisis (no se analizan ni aparecen en ninguna salida)
   --excluir A,B          campos cuyos problemas no se cuentan en el segundo listado de casos (por defecto, el sujeto)
   --sep "|"              separador (si se omite, se detecta entre | ; tabulación y coma)
@@ -26,7 +28,7 @@ import pandas as pd
 
 ap = argparse.ArgumentParser()
 ap.add_argument("archivo")
-for opcion in ("--monto", "--sujeto", "--categorias", "--anio", "--fecha", "--excluir", "--ignorar", "--sep"):
+for opcion in ("--monto", "--sujeto", "--categorias", "--anio", "--fecha", "--excluir", "--ignorar", "--duplicados", "--sep"):
     ap.add_argument(opcion)
 args = ap.parse_args()
 
@@ -202,6 +204,7 @@ ANIO_ORIGEN = columna(args.anio, "--anio", "número")
 FECHA_ALTA = columna(args.fecha, "--fecha", "fecha")
 if bool(ANIO_ORIGEN) != bool(FECHA_ALTA):
     raise SystemExit("--anio y --fecha se indican juntos (año de origen y fecha de alta).")
+DUPLICADOS = [columna(x, "--duplicados") for x in (args.duplicados or "").split(",") if x.strip()]
 ORDEN_CAT = [columna(x, "--categorias") for x in (args.categorias or "").split(",") if x.strip()]
 if MONTO:
     rol[MONTO] = "medida"
@@ -299,7 +302,7 @@ for c in crudo.columns:
     if tipo[c] in ("número", "fecha"):
         control("Completitud", c, f"no convertible a {tipo[c]}", no_convertible[c])
 for c in crudo.columns:
-    if rol[c] == "identificador":
+    if rol[c] == "identificador" or c in DUPLICADOS:
         control("Consistencia", c, "duplicado", con_dato[c] & crudo[c].duplicated(keep=False))
     if tipo[c] == "texto":     # Excel no los admite y suelen venir de cargas o exportaciones defectuosas
         control("Consistencia", c, "caracteres de control (no imprimibles)",

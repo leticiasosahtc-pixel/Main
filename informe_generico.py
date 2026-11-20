@@ -4,7 +4,7 @@ Corre primero el análisis de analisis_generico.py (deben estar en la misma carp
 con lo que ese análisis detectó: no hace falta correr los dos por separado.
 
 Uso:   python informe_generico.py archivo.txt [mismas opciones que analisis_generico.py]
-       (--monto, --sujeto, --categorias, --anio, --fecha, --excluir, --ignorar, --sep)
+       (--monto, --sujeto, --categorias, --anio, --fecha, --excluir, --ignorar, --duplicados, --sep)
 Requiere: pip install pandas openpyxl plotly
 Salida: salida_analisis/informe.html (se abre con cualquier navegador, sin internet)
 """
