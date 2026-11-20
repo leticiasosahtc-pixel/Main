@@ -10,7 +10,6 @@ import sys
 
 # ---------------------------------------------------------------- QUÉ REEMPLAZAR (modificar acá)
 REEMPLAZOS = {
-    "|": "/",          # el separador dentro del texto rompe las columnas
     ";": ",",
     '"': "'",
     "\t": " ",
@@ -26,11 +25,17 @@ archivo, campo = sys.argv[1], sys.argv[2].strip().upper()
 salida = re.sub(r"(\.\w+)?$", r"_depurado\1", archivo, count=1)
 control = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
-# Se lee y se escribe con la misma codificación que tiene el archivo
-for codificacion in ("utf-8-sig", "latin-1"):
+# Se lee y se escribe con la misma codificación que tiene el archivo (con o sin BOM)
+with open(archivo, "rb") as f:
+    bom = f.read(3) == b"\xef\xbb\xbf"
+for codificacion in (("utf-8-sig" if bom else "utf-8"), "latin-1"):
     try:
         with open(archivo, encoding=codificacion, newline="") as f:
-            lineas = f.read().splitlines(keepends=True)
+            # se corta solo en "\n": splitlines() también corta en caracteres de control y rompería registros
+            lineas = [l + "\n" for l in f.read().split("\n")]
+        lineas[-1] = lineas[-1][:-1]                       # la última no tenía "\n" agregado
+        if lineas[-1] == "":
+            lineas.pop()
         break
     except UnicodeDecodeError:
         continue
