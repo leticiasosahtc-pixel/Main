@@ -9,6 +9,7 @@ Uso:   python analisis_generico.py archivo.txt [opciones]
   --categorias A,B       categorías principales: A es el grupo (ej. CLASE) y B la subcategoría (ej. CATEGORIA)
   --anio COLUMNA         año de origen (ej. AÑO_FABRICACION) ...
   --fecha COLUMNA        ... y fecha de alta (ej. FECHA_ALTA): habilita los controles y gráficos de antigüedad
+  --ignorar A,B          campos que se quitan del análisis (no se analizan ni aparecen en ninguna salida)
   --excluir A,B          campos cuyos problemas no se cuentan en el segundo listado de casos (por defecto, el sujeto)
   --sep "|"              separador (si se omite, se detecta entre | ; tabulación y coma)
 Lo que no se indica se detecta automáticamente y se avisa en el resumen.
@@ -25,7 +26,7 @@ import pandas as pd
 
 ap = argparse.ArgumentParser()
 ap.add_argument("archivo")
-for opcion in ("--monto", "--sujeto", "--categorias", "--anio", "--fecha", "--excluir", "--sep"):
+for opcion in ("--monto", "--sujeto", "--categorias", "--anio", "--fecha", "--excluir", "--ignorar", "--sep"):
     ap.add_argument(opcion)
 args = ap.parse_args()
 
@@ -110,6 +111,13 @@ avisos_carga = []
 
 df, SEP = leer(args.archivo, args.sep)
 df.columns = df.columns.str.strip().str.upper()
+IGNORADOS = [x.strip().upper() for x in (args.ignorar or "").split(",") if x.strip()]
+faltan = [c for c in IGNORADOS if c not in df.columns]
+if faltan:
+    raise SystemExit(f"--ignorar {', '.join(faltan)}: no existe. Columnas: {', '.join(df.columns)}")
+df = df.drop(columns=IGNORADOS)
+if df.columns.empty:
+    raise SystemExit("--ignorar: no queda ninguna columna para analizar.")
 df = df.apply(lambda c: c.str.strip()).replace("", pd.NA)
 crudo = df.copy()                                   # valores originales como texto (para los controles)
 N = len(df)
@@ -118,7 +126,8 @@ con_dato = crudo.notna() & ~es_relleno
 
 log("=" * 70)
 log(f"ARCHIVO: {args.archivo}   separador: {SEP!r}")
-log(f"Registros: {N:,}   Columnas: {len(df.columns)}")
+log(f"Registros: {N:,}   Columnas: {len(df.columns)}"
+    + (f"   (se ignoran: {', '.join(IGNORADOS)})" if IGNORADOS else ""))
 log("=" * 70)
 if N == 0:
     raise SystemExit("El archivo no tiene registros.")
