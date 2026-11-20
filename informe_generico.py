@@ -3,7 +3,8 @@ Informe HTML con gráficos interactivos (Plotly) para cualquier archivo de texto
 Corre primero el análisis de analisis_generico.py (deben estar en la misma carpeta) y arma el informe
 con lo que ese análisis detectó: no hace falta correr los dos por separado.
 
-Uso:   python informe_generico.py archivo.txt [--monto COLUMNA] [--sep "|"]
+Uso:   python informe_generico.py archivo.txt [mismas opciones que analisis_generico.py]
+       (--monto, --sujeto, --categorias, --anio, --fecha, --excluir, --sep)
 Requiere: pip install pandas openpyxl plotly
 Salida: salida_analisis/informe.html (se abre con cualquier navegador, sin internet)
 """
@@ -18,6 +19,7 @@ from plotly.offline import get_plotlyjs
 import analisis_generico as A          # ejecuta el análisis completo y deja sus resultados disponibles
 
 df, crudo, N, MONTO, rol = A.df, A.crudo, A.N, A.MONTO, A.rol
+GRUPO, SUBCAT, SUJETO = A.GRUPO, A.SUBCAT, A.SUJETO
 SALIDA = A.ruta_salida("informe.html")
 MAX_PUNTOS = 20000        # máximo de puntos en los gráficos de dispersión
 MAX_ATIPICOS = 300        # máximo de atípicos dibujados por caja
@@ -25,6 +27,8 @@ MAX_CAMPOS = 6            # máximo de categorías (y de fechas) que se grafican
 UMBRAL_ALTO = 1.0         # % de registros desde el cual un control se marca en rojo (criterio orientativo)
 
 AZUL, NARANJA, VERDE, GRIS = "#2a78d6", "#eb6834", "#1baf7a", "#898781"
+RAMPA = ["#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]      # un solo tono, de claro a oscuro (tramos ordenados)
+CRITICO = "#d03b3b"                                          # reservado para lo inconsistente
 SERIES = [AZUL, NARANJA, VERDE, "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]
 
 esc = lambda x: _html.escape(str(x))
@@ -37,6 +41,9 @@ positivos = df.loc[df[MONTO] > 0, MONTO] if MONTO else pd.Series(dtype=float)
 HAY_MONTO = len(positivos) > 0
 # Campos que identifican a un registro: se muestran al pasar el mouse sobre un punto
 CLAVES = (A.ids + A.codigos)[:3] or list(crudo.columns[:2])
+# En la dispersión también se muestran el grupo y la subcategoría (como CLASE / CATEGORIA en el original)
+CLAVES_PUNTO = CLAVES + [c for c in (GRUPO, SUBCAT) if c and c not in CLAVES]
+hover_punto = "<br>".join(f"{esc(c)}: %{{customdata[{i}]}}" for i, c in enumerate(CLAVES_PUNTO))
 hover_claves = "<br>".join(f"{esc(c)}: %{{customdata[{i}]}}" for i, c in enumerate(CLAVES))
 
 graficos = []   # (titulo, explicacion, figura)
@@ -202,14 +209,17 @@ for campo in (A.fechas + A.anios)[:MAX_CAMPOS]:
     g = pd.DataFrame({"anio": anio, "monto": df.loc[valido, MONTO] if MONTO else 0}).groupby("anio")["monto"]
     rango = range(int(anio.min()), int(anio.max()) + 1)
     cuenta, total = g.size().reindex(rango, fill_value=0), g.sum().reindex(rango, fill_value=0)
-    fig = go.Figure(go.Bar(x=list(rango), y=cuenta.values, marker_color=AZUL, customdata=total.values,
+    if A.PAR and campo in (A.ANIO_ORIGEN, A.FECHA_ALTA):
+        pass                    # va en el gráfico combinado "origen y altas por año"
+    else:
+      fig = go.Figure(go.Bar(x=list(rango), y=cuenta.values, marker_color=AZUL, customdata=total.values,
                            hovertemplate="%{x}<br>%{y:,} registros" + (f"<br>{esc(MONTO)}: %{{customdata:,.0f}}" if MONTO else "")
                                          + "<extra></extra>"))
-    fig.update_xaxes(title=f"Año ({campo})")
-    fig.update_yaxes(title="Registros")
-    agregar(f"Registros por año de {campo}",
-            "Un pico aislado suele indicar una carga masiva, una migración de sistema o un cambio de criterio; "
-            "conviene averiguar qué pasó ese año antes de muestrear.", fig)
+      fig.update_xaxes(title=f"Año ({campo})")
+      fig.update_yaxes(title="Registros")
+      agregar(f"Registros por año de {campo}",
+              "Un pico aislado suele indicar una carga masiva, una migración de sistema o un cambio de criterio; "
+              "conviene averiguar qué pasó ese año antes de muestrear.", fig)
 
     if HAY_MONTO:
         base, nota = muestra_dispersion(df[valido & (df[MONTO] > 0)])
@@ -218,12 +228,123 @@ for campo in (A.fechas + A.anios)[:MAX_CAMPOS]:
         fx = "" if es_fecha else ":.0f"
         fig = go.Figure(go.Scattergl(
             x=x, y=base[MONTO], mode="markers", marker=dict(size=5, opacity=.4, color=AZUL),
-            customdata=crudo.loc[base.index, CLAVES].astype(str).to_numpy(),
-            hovertemplate=f"{hover_claves}<br>{esc(campo)}: %{{x{fx}}}<br>{esc(MONTO)}: %{{y:,.2f}}<extra></extra>"))
+            customdata=crudo.loc[base.index, CLAVES_PUNTO].fillna("(vacío)").astype(str).to_numpy(),
+            hovertemplate=f"{hover_punto}<br>{esc(campo)}: %{{x{fx}}}<br>{esc(MONTO)}: %{{y:,.2f}}<extra></extra>"))
         fig.update_yaxes(type="log", dtick=1, tickformat=",.0f", title=f"{MONTO} (escala log)")
         fig.update_xaxes(title=campo)
         agregar(f"{MONTO} según {campo}",
                 "Pasá el mouse sobre un punto raro para identificarlo. Podés hacer zoom arrastrando." + nota, fig)
+
+# ---------------------------------------------------------------- 3 bis. AÑO DE ORIGEN Y FECHA DE ALTA
+# (equivalen a AÑO_FABRICACION y FECHA_ALTA del informe original)
+if A.PAR:
+    AO, FA = A.ANIO_ORIGEN, A.FECHA_ALTA
+    alta_ok = df[FA].where(df[FA].between(pd.Timestamp(1900, 1, 1), A.hoy))
+    origen = A.anio_ok[AO].dropna().astype(int).value_counts().sort_index()
+    altas = alta_ok.dt.year.dropna().astype(int).value_counts().sort_index()
+    if len(origen) and len(altas):
+        # Las dos series en el mismo eje: cada registro tiene un año de origen y un año de alta,
+        # así que las cantidades son comparables.
+        todos = range(int(min(origen.index.min(), altas.index.min())), int(max(origen.index.max(), altas.index.max())) + 1)
+        origen, altas = origen.reindex(todos, fill_value=0), altas.reindex(todos, fill_value=0)
+        fig = go.Figure([
+            go.Bar(x=list(todos), y=altas.values, name=f"Altas en el año ({FA})", marker_color=AZUL, opacity=.75,
+                   hovertemplate="%{y:,} altas<extra></extra>"),
+            go.Scatter(x=list(todos), y=origen.values, name=f"Registros por {AO}", mode="lines+markers",
+                       line=dict(color=NARANJA, width=2), marker=dict(size=8),
+                       hovertemplate=f"%{{y:,}} con ese {esc(AO)}<extra></extra>")])
+        fig.update_layout(hovermode="x unified", legend=dict(orientation="h", y=1.1), bargap=.1)
+        fig.update_xaxes(title="Año")
+        fig.update_yaxes(title="Registros")
+        agregar(f"{AO} y altas por año",
+                "Normalmente las barras (altas) acompañan a la línea (año de origen). Un pico de altas sin pico en la "
+                "línea sugiere una carga masiva, una migración de sistema o un cambio normativo; conviene averiguar "
+                "qué pasó ese año.", fig)
+
+    # Antigüedad al momento del alta (año de alta - año de origen)
+    ant = pd.DataFrame({"ANIO_ALTA": alta_ok.dt.year, "ORIGEN": A.anio_ok[AO]}).dropna().astype(int)
+    ant["ANTIG"] = ant["ANIO_ALTA"] - ant["ORIGEN"]
+    TRAMOS = [  # (etiqueta, desde, hasta, color)
+        ("Inconsistente (alta antes del origen)", -9999, -1, CRITICO),
+        ("Nuevo (0–1 año)", 0, 1, RAMPA[0]),
+        ("2–5 años", 2, 5, RAMPA[1]),
+        ("6–10 años", 6, 10, RAMPA[2]),
+        ("Más de 10 años", 11, 9999, RAMPA[3])]
+    if len(ant):
+        total_anio = ant.groupby("ANIO_ALTA").size()
+        fig = go.Figure()
+        for etiqueta, desde, hasta, color in TRAMOS:
+            serie = (ant[ant["ANTIG"].between(desde, hasta)].groupby("ANIO_ALTA").size()
+                     .reindex(total_anio.index, fill_value=0))
+            if serie.sum() == 0:
+                continue
+            pct = serie / total_anio * 100
+            fig.add_trace(go.Bar(x=total_anio.index, y=serie.values, name=etiqueta, marker_color=color,
+                                 marker_line=dict(color="white", width=1),
+                                 customdata=np.column_stack([serie.values, pct.values]),
+                                 hovertemplate=f"{etiqueta}: " + "%{customdata[0]:,} (%{customdata[1]:.1f}%)<extra></extra>"))
+        fig.update_layout(barmode="stack", hovermode="x unified", legend=dict(orientation="h", y=1.12),
+                          updatemenus=[dict(type="buttons", direction="right", x=1, xanchor="right", y=1.28,
+                                            buttons=[dict(label="Cantidad", method="relayout",
+                                                          args=[{"barnorm": "", "yaxis.title.text": "Altas"}]),
+                                                     dict(label="% del año", method="relayout",
+                                                          args=[{"barnorm": "percent", "yaxis.title.text": "% de las altas del año"}])])])
+        fig.update_xaxes(title=f"Año de alta ({FA})")
+        fig.update_yaxes(title="Altas")
+        pct_viejos = (ant["ANTIG"] >= 2).mean() * 100
+        agregar("Antigüedad al darse de alta",
+                f"Cada barra son las altas del año, separadas según los años transcurridos entre {AO} y {FA}. "
+                f"En total, el {pct_txt(pct_viejos)} de las altas tenían 2 años o más de antigüedad. Con el botón "
+                "\"% del año\" se ve si esa proporción cambia con el tiempo. 1 año se cuenta como nuevo porque lo "
+                "originado a fin de año suele darse de alta al año siguiente.", fig)
+
+        # Subcategoría según la antigüedad al alta, con selector de grupo
+        apilar = SUBCAT or GRUPO
+        selector = GRUPO if SUBCAT else None
+        if apilar:
+            ORDEN_TRAMOS = ["Nuevo (0–1)", "2–5", "6–10", "+10", "Inconsistente"]
+            cruce = ant.join(df[[c for c in (apilar, selector) if c]])
+            cruce["TRAMO"] = pd.cut(cruce["ANTIG"], bins=[-np.inf, -1, 1, 5, 10, np.inf],
+                                    labels=["Inconsistente", "Nuevo (0–1)", "2–5", "6–10", "+10"]).astype(str)
+            cats = cruce[apilar].fillna("(vacío)").astype(str)
+            principales = list(cats.value_counts().index[:7])      # hasta 7 colores; el resto va a "Otras"
+            cruce["CAT"] = cats.where(cats.isin(principales), "Otras")
+            orden_cats = principales + (["Otras"] if (cruce["CAT"] == "Otras").any() else [])
+            colores = {c: (GRIS if c == "Otras" else SERIES[i]) for i, c in enumerate(orden_cats)}
+            opciones = [("Todos", cruce)]
+            if selector:
+                top_sel = A.tablas[f"CAT_{selector}"].dropna(subset=["total"] if MONTO else []).head(10).index
+                opciones += [(corto(v), cruce[cruce[selector] == v]) for v in top_sel if not pd.isna(v)]
+            fig = go.Figure()
+            for i, (nombre, sub) in enumerate(opciones):
+                tabla = (pd.crosstab(sub["TRAMO"], sub["CAT"])
+                           .reindex(index=ORDEN_TRAMOS, columns=orden_cats, fill_value=0))
+                tabla = tabla[tabla.sum(axis=1) > 0]
+                n = tabla.sum(axis=1)
+                pct = tabla.div(n, axis=0) * 100
+                etiquetas_x = [f"{t}<br>n = {fmt(v)}" for t, v in n.items()]
+                for cat in orden_cats:
+                    fig.add_trace(go.Bar(
+                        x=etiquetas_x, y=pct[cat], name=corto(cat), visible=(i == 0), legendgroup=cat,
+                        marker_color=colores[cat], marker_line=dict(color="white", width=1),
+                        customdata=np.column_stack([tabla[cat], pct[cat]]),
+                        hovertemplate=f"{esc(corto(cat))}: " + "%{customdata[0]:,} (%{customdata[1]:.1f}%)<extra></extra>"))
+            n_cat = len(orden_cats)
+            menu = []
+            if len(opciones) > 1:
+                menu = [dict(buttons=[dict(label=nombre, method="update",
+                                           args=[{"visible": [k // n_cat == i for k in range(len(fig.data))]}])
+                                      for i, (nombre, _) in enumerate(opciones)],
+                             x=0, xanchor="left", y=1.2, yanchor="top")]
+            fig.update_layout(barmode="stack", hovermode="x unified", legend=dict(title=apilar),
+                              updatemenus=menu, margin=dict(t=70))
+            fig.update_yaxes(title="% de los registros del tramo", range=[0, 100])
+            fig.update_xaxes(title="Antigüedad al darse de alta")
+            agregar(f"{apilar} según antigüedad al alta",
+                    f"Cada barra muestra cómo se reparte {apilar} dentro de un tramo de antigüedad (n = cantidad de "
+                    "registros). " + (f"Con el selector de arriba se puede ver un solo valor de {selector}. " if selector else "")
+                    + f"Si lo dado de alta con antigüedad tiene un {apilar} muy distinto a lo nuevo, conviene revisar "
+                    "cómo se asigna al darse de alta.", fig)
 
 # ---------------------------------------------------------------- 4. OTRAS MEDIDAS Y BENFORD
 for campo in [c for c in A.medidas if c != MONTO][:3]:
@@ -269,10 +390,12 @@ DESCRIPCIONES = {
     "fecha anterior a 1900": "Fechas demasiado antiguas; suelen ser valores por defecto del sistema.",
     "fila completa duplicada": "Registros idénticos en todos los campos: el archivo puede tener filas repetidas.",
 }
+DESC_ALTA = ("La fecha de alta es anterior al año de origen (con un año de tolerancia): el registro figura dado "
+             "de alta antes de existir.")
 COLUMNAS_COMP = [("vacío", "Vacío"), ("texto de relleno", "Texto de relleno"),
                  ("igual a 0", "Igual a 0"), ("no convertible", "No convertible")]
 ctrl = A.tabla_ctrl
-es_comp = ctrl["control"].str.startswith(tuple(k for k, _ in COLUMNAS_COMP))
+es_comp = ctrl["tipo"] == "Completitud"
 
 filas = ""
 for campo in crudo.columns:
@@ -287,7 +410,7 @@ matriz = ("<table class='matriz'><tr><th>Campo</th>" + "".join(f"<th>{n}</th>" f
 filas = ""
 for _, r in ctrl[~es_comp].iterrows():
     filas += (f"<tr><td>{chip(r['casos'], r['%'])}</td><td><b>{esc(r['campo'])}: {esc(r['control'])}</b><br>"
-              f"<small>{DESCRIPCIONES.get(r['control'], '')}</small></td>"
+              f"<small>{DESCRIPCIONES.get(r['control'], DESC_ALTA if r['control'].startswith('alta anterior') else '')}</small></td>"
               f"<td class='num'>{fmt(r['casos'])}</td><td class='num'>{pct_txt(r['%'])}</td></tr>")
 lista = ("<table class='lista'><tr><th>Estado</th><th>Control</th><th class='num'>Casos</th>"
          f"<th class='num'>% de registros</th></tr>{filas}</table>") if filas else "<p>No hay controles de consistencia aplicables.</p>"
@@ -300,7 +423,13 @@ if MONTO:
                  f"{fmt(mm.isna().sum())} registros con {esc(MONTO)} vacío o inválido, {fmt((mm == 0).sum())} con valor 0 y "
                  f"{fmt((mm < 0).sum())} negativos. Esos registros no pueden salir en un muestreo por importe: "
                  f"hay que tratarlos como una población aparte.</li>"
-                 f"<li>Gráficos por <b>año o fecha</b>: se excluyen los registros sin fecha válida, con fecha futura o con año imposible.</li>"
+                 + (f"<li>Gráficos de <b>{esc(A.ANIO_ORIGEN)}</b> (dispersión, origen y altas, antigüedad): se excluyen "
+                    f"{fmt(df[A.ANIO_ORIGEN].isna().sum())} registros sin año y "
+                    f"{fmt((df[A.ANIO_ORIGEN].notna() & A.anio_ok[A.ANIO_ORIGEN].isna()).sum())} con año imposible "
+                    f"(0, anterior a 1900 o futuro).</li>"
+                    f"<li>Gráficos de <b>altas</b>: se excluyen {fmt((~df[A.FECHA_ALTA].between(pd.Timestamp(1900, 1, 1), A.hoy)).sum())} "
+                    f"registros sin {esc(A.FECHA_ALTA)} válida o con fecha futura.</li>" if A.PAR else "")
+                 + f"<li>Otros gráficos por <b>año o fecha</b>: se excluyen los registros sin fecha válida, con fecha futura o con año imposible.</li>"
                  f"<li>Los gráficos de <b>cantidad por categoría</b> cuentan todos los registros.</li></ul>")
 
 con_casos = int((ctrl["casos"] > 0).sum())
@@ -308,7 +437,7 @@ avisos_html = "".join(f"<p class='aviso'>{esc(a)}</p>" for a in A.avisos)
 calidad_html = f"""<section><h2>Calidad de los datos</h2>
 <p>Se hicieron <b>{len(ctrl)}</b> controles: <b>{len(ctrl) - con_casos}</b> sin casos y <b>{con_casos}</b> con casos a revisar.
 <b>{fmt(len(A.casos))}</b> registros ({pct_txt(len(A.casos) / N * 100)}) tienen al menos un problema; el detalle está en
-casos_con_problemas.txt. Un mismo registro puede aparecer en más de un control.</p>
+casos_con_problemas.txt y, campo por campo, en las hojas CAMPO_ del Excel. Un mismo registro puede aparecer en más de un control.</p>
 <p class='leyenda'><span class='chip ok'>✓ Sin casos</span>
 <span class='chip medio'>● Revisar: menos del {pct_txt(UMBRAL_ALTO)}</span>
 <span class='chip alto'>▲ Atención: {pct_txt(UMBRAL_ALTO)} o más</span>
@@ -335,6 +464,8 @@ tablas_html += tabla_html(A.tablas.get("ESTADISTICA_NUMERICOS"), "Estadística d
 
 # ---------------------------------------------------------------- 7. ARMADO DEL HTML
 kpis = [("Registros", fmt(N)), ("Campos", str(len(crudo.columns)))]
+if SUJETO:
+    kpis.append((f"Sujetos ({SUJETO})", fmt(df[SUJETO].nunique())))
 if MONTO:
     kpis.append((f"Total de {MONTO}", fmt(df[MONTO].sum())))
 if HAY_MONTO:
