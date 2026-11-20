@@ -388,6 +388,8 @@ DESCRIPCIONES = {
     "año < 1900 o futuro": "Años imposibles (incluye el año 0). Suelen ser datos mal cargados.",
     "fecha futura": "Fechas posteriores a hoy.",
     "fecha anterior a 1900": "Fechas demasiado antiguas; suelen ser valores por defecto del sistema.",
+    "caracteres de control (no imprimibles)": "Caracteres invisibles (por ejemplo, nulos) dentro del texto; suelen venir "
+        "de cargas o exportaciones defectuosas. En el Excel se muestran como \ufffd; en los .txt quedan tal cual.",
     "fila completa duplicada": "Registros idénticos en todos los campos: el archivo puede tener filas repetidas.",
 }
 DESC_ALTA = ("La fecha de alta es anterior al año de origen (con un año de tolerancia): el registro figura dado "

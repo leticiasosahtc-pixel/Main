@@ -92,6 +92,21 @@ HOJA = args.hoja
 SALIDA = f"muestra_{pd.Timestamp.now():%Y%m%d_%H%M%S}.xlsx"
 avisos = []
 
+def excel(t):
+    """Excel no admite caracteres de control (salvo tabulación y salto de línea): en la copia que va al Excel se
+    reemplazan por '\ufffd'. Los .txt conservan el valor original."""
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    limpiar = lambda v: ILLEGAL_CHARACTERS_RE.sub("\ufffd", v) if isinstance(v, str) else v
+    texto = lambda s: not (pd.api.types.is_numeric_dtype(s) or pd.api.types.is_datetime64_any_dtype(s))
+    t = t.copy()
+    for c in t.columns:
+        if texto(t[c]):
+            t[c] = t[c].map(limpiar)
+    if texto(t.index):
+        t.index = t.index.map(limpiar)
+    t.columns = t.columns.map(limpiar)
+    return t
+
 # ---------------------------------------------------------------- 1. LECTURA
 def leer(archivo, hoja):
     """Devuelve la tabla y el número de fila del archivo donde empieza el primer registro."""
@@ -329,10 +344,10 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
 with pd.ExcelWriter(SALIDA, engine="openpyxl") as xl:
-    parametros.to_excel(xl, sheet_name="PARAMETROS", index=False)
-    resumen.to_excel(xl, sheet_name="RESUMEN_ESTRATOS", index=False)
-    muestra.to_excel(xl, sheet_name="MUESTRA", index=False)
-    reserva.to_excel(xl, sheet_name="RESERVA", index=False)
+    excel(parametros).to_excel(xl, sheet_name="PARAMETROS", index=False)
+    excel(resumen).to_excel(xl, sheet_name="RESUMEN_ESTRATOS", index=False)
+    excel(muestra).to_excel(xl, sheet_name="MUESTRA", index=False)
+    excel(reserva).to_excel(xl, sheet_name="RESERVA", index=False)
     for nombre, ws in xl.sheets.items():
         for celda in ws[1]:
             celda.font = Font(bold=True)

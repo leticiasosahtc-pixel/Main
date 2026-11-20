@@ -60,16 +60,53 @@ def ruta_salida(nombre):
             f"Se guarda como {os.path.basename(ruta)}. Cerrar el archivo antes de volver a correr.")
     return ruta
 
+def excel(t):
+    """Excel no admite caracteres de control (salvo tabulación y salto de línea): en la copia que va al Excel se
+    reemplazan por '\ufffd'. Los .txt conservan el valor original."""
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    limpiar = lambda v: ILLEGAL_CHARACTERS_RE.sub("\ufffd", v) if isinstance(v, str) else v
+    texto = lambda s: not (pd.api.types.is_numeric_dtype(s) or pd.api.types.is_datetime64_any_dtype(s))
+    t = t.copy()
+    for c in t.columns:
+        if texto(t[c]):
+            t[c] = t[c].map(limpiar)
+    if texto(t.index):
+        t.index = t.index.map(limpiar)
+    t.columns = t.columns.map(limpiar)
+    return t
+
 # ---------------------------------------------------------------- 1. CARGA
+def tiene_nulos(ruta):
+    """True si el archivo tiene caracteres nulos (byte 0)."""
+    with open(ruta, "rb") as f:
+        for bloque in iter(lambda: f.read(1 << 24), b""):
+            if b"\x00" in bloque:
+                return True
+    return False
+
 def leer(ruta, sep):
+    nulos_archivo = tiene_nulos(ruta)
     for enc in ("utf-8-sig", "latin-1"):
         try:
             with open(ruta, encoding=enc) as f:
                 cabecera = f.readline()
             sep = sep or max("|;\t,", key=cabecera.count)
-            return pd.read_csv(ruta, sep=sep, dtype=str, encoding=enc, keep_default_na=False), sep
+            fuente = ruta
+            if nulos_archivo:
+                # pandas corta el texto en el primer carácter nulo y pierde el resto del valor sin avisar:
+                # se reemplazan por '\ufffd' antes de leer, y el control de caracteres de control los cuenta
+                import io
+                with open(ruta, encoding=enc) as f:
+                    texto = f.read()
+                avisos_carga.append(f"El archivo tiene {texto.count(chr(0)):,} caracteres nulos (byte 0); se reemplazaron "
+                                    "por '\ufffd' para no perder el resto del valor. Ver el control 'caracteres de control'.")
+                fuente = io.StringIO(texto.replace("\x00", "\ufffd"))
+            return pd.read_csv(fuente, sep=sep, dtype=str, keep_default_na=False,
+                               **({} if nulos_archivo else {"encoding": enc})), sep
         except UnicodeDecodeError:
             continue
+
+avisos_carga = []
 
 df, SEP = leer(args.archivo, args.sep)
 df.columns = df.columns.str.strip().str.upper()
@@ -87,7 +124,7 @@ if N == 0:
     raise SystemExit("El archivo no tiene registros.")
 
 # ---------------------------------------------------------------- 2. TIPO Y ROL DE CADA CAMPO
-avisos = []
+avisos = list(avisos_carga)
 
 def a_numero(s, campo=None):
     """Acepta 1234.56, 1.234,56 y 1,234.56 (decide por la posición de la coma respecto del punto)."""
@@ -254,6 +291,9 @@ for c in crudo.columns:
 for c in crudo.columns:
     if rol[c] == "identificador":
         control("Consistencia", c, "duplicado", con_dato[c] & crudo[c].duplicated(keep=False))
+    if tipo[c] == "texto":     # Excel no los admite y suelen venir de cargas o exportaciones defectuosas
+        control("Consistencia", c, "caracteres de control (no imprimibles)",
+                crudo[c].str.contains(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffd]", regex=True, na=False))
     if rol[c] == "medida":
         control("Consistencia", c, "negativo", df[c] < 0)
     if rol[c] == "año":
@@ -576,7 +616,7 @@ def escribir_hoja_campo(xl, campo):
     bloques = [("RESUMEN", resumen_c, 0), ("CONTROLES", controles_c, 3),
                ("VALORES MÁS FRECUENTES", frec, 7), ("FORMATOS (A = letra, 9 = número)", patr, 11)]
     for _, t, col in bloques:
-        t.to_excel(xl, sheet_name=nombre, startrow=2, startcol=col, index=False)
+        excel(t).to_excel(xl, sheet_name=nombre, startrow=2, startcol=col, index=False)
     ws = xl.sheets[nombre]
     ws.cell(1, 1, f"Análisis del campo {campo}").font = Font(bold=True, size=14)
     for titulo, _, col in bloques:
@@ -595,22 +635,22 @@ def escribir_hoja_campo(xl, campo):
         registros = registros.head(EXCEL_MAX)
     ws.cell(fila, 1, titulo).font = Font(bold=True, color="B42318")
     if n:
-        registros.to_excel(xl, sheet_name=nombre, startrow=fila, index=False)
+        excel(registros).to_excel(xl, sheet_name=nombre, startrow=fila, index=False)
     for col, ancho in zip("ABCDEFGHIJKLMN", [36, 16, 3, 40, 10, 8, 3, 28, 10, 8, 3, 22, 10, 8]):
         ws.column_dimensions[col].width = ancho
 
 # ---------------------------------------------------------------- 13. EXPORTAR
 log("\nEscribiendo el Excel (con muchos registros con problemas puede tardar varios minutos)...")
 with pd.ExcelWriter(ruta_salida("tablas_analisis.xlsx"), engine="openpyxl") as xl:
-    campos.to_excel(xl, sheet_name=hoja("CAMPOS"))
-    nulos.to_excel(xl, sheet_name=hoja("NULOS"))
-    tabla_ctrl.to_excel(xl, sheet_name=hoja("CONTROLES"), index=False)
+    excel(campos).to_excel(xl, sheet_name=hoja("CAMPOS"))
+    excel(nulos).to_excel(xl, sheet_name=hoja("NULOS"))
+    excel(tabla_ctrl).to_excel(xl, sheet_name=hoja("CONTROLES"), index=False)
     for c in crudo.columns:
         escribir_hoja_campo(xl, c)
     for nombre, t in tablas.items():
-        t.to_excel(xl, sheet_name=hoja(nombre))
+        excel(t).to_excel(xl, sheet_name=hoja(nombre))
     if atipicos is not None:
-        crudo.loc[atipicos.sort_values(MONTO, ascending=False).index].head(EXCEL_MAX).to_excel(
+        excel(crudo.loc[atipicos.sort_values(MONTO, ascending=False).index].head(EXCEL_MAX)).to_excel(
             xl, sheet_name=hoja("ATIPICOS"), index=False)
 
 with open(ruta_salida("resumen.txt"), "w", encoding="utf-8") as f:
