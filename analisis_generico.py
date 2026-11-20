@@ -51,6 +51,7 @@ def log(texto=""):
 def ruta_salida(nombre):
     """Ruta dentro de la carpeta de salida. Si el archivo está abierto en otro programa (Excel lo bloquea),
     usa un nombre alternativo en vez de cortar el análisis al final."""
+    nombre = re.sub(r"[^\w.-]", "_", nombre)            # un "/" en el nombre de un campo (ej. CUIT/DNI) crearía carpetas
     ruta = os.path.join(SALIDA, nombre)
     try:
         open(ruta, "a").close()
