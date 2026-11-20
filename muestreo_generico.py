@@ -10,6 +10,9 @@ Uso:
 Opciones (todas opcionales; si no se indican valen los PARÁMETROS de abajo):
     --clave COLUMNA        junta en un solo registro todas las filas con el mismo valor de esa columna
                            (sin --clave solo se juntan filas idénticas, salvo por PROBLEMA)
+    --separar duplicado    los registros cuyo PROBLEMA contiene ese texto forman su propio estrato aunque tengan
+                           otros problemas (así se les aplica el mínimo por estrato). Por defecto: duplicado.
+                           Varios separados por coma; --separar "" para no separar ninguno.
     --completo duplicado   los registros cuyo PROBLEMA contiene ese texto entran TODOS en la muestra
                            (se pueden poner varios separados por coma)
     --estrato COLUMNA      columna para estratificar; "ninguno" = aleatorio simple sobre toda la base
@@ -43,6 +46,7 @@ MINIMO_POR_ESTRATO = 2    # ningún estrato queda con menos casos (si tiene meno
 RESERVA = 0.10            # casos extra (10%) para reemplazar los que no se puedan verificar
 SEMILLA = 123456          # semilla fija: con el mismo archivo y parámetros sale siempre la misma muestra
 CLAVE = None              # columna para juntar filas del mismo registro; None = solo se juntan filas idénticas
+SEPARAR = ["duplicado"]   # textos de PROBLEMA cuyos registros forman su propio estrato, aunque tengan otros problemas
 COMPLETO = []             # textos de PROBLEMA cuyos registros se revisan al 100% (ej. ["duplicado"])
 COL_PROBLEMA = "PROBLEMA" # columna con la descripción del problema
 ESTRATO_VARIOS = "Más de un problema"   # estrato para los registros con 2 o más problemas
@@ -54,6 +58,7 @@ ap.add_argument("archivo", nargs="?")
 ap.add_argument("hoja", nargs="?")
 ap.add_argument("--clave")
 ap.add_argument("--completo")
+ap.add_argument("--separar")
 ap.add_argument("--estrato")
 ap.add_argument("--confianza", type=float)
 ap.add_argument("--error", type=float)
@@ -74,6 +79,8 @@ MINIMO_POR_ESTRATO = MINIMO_POR_ESTRATO if args.minimo is None else args.minimo
 RESERVA = RESERVA if args.reserva is None else args.reserva
 CONCLUIR_POR_ESTRATO = args.por_estrato or CONCLUIR_POR_ESTRATO
 CLAVE = args.clave or CLAVE
+if args.separar is not None:
+    SEPARAR = [t.strip() for t in args.separar.split(",") if t.strip()]
 if args.completo is not None:
     COMPLETO = [t.strip() for t in args.completo.split(",") if t.strip()]
 if args.estrato is not None:
@@ -236,6 +243,13 @@ if ESTRATO and ESTRATO.upper() in pob.columns:
     estrato = "ESTRATO"
     if ESTRATO.upper() == COL_PROBLEMA:
         valores = pob[COL_PROBLEMA].where(pob["CANT_PROBLEMAS"] == 1, ESTRATO_VARIOS)
+        # Sin esto, un registro duplicado que además tiene otro problema iría a "Más de un problema" y los
+        # duplicados no formarían estrato (ni se les aplicaría el mínimo). Gana el primer texto que coincide.
+        ya = pd.Series(False, index=pob.index)
+        for texto in SEPARAR:
+            cumple = ~ya & pob[COL_PROBLEMA].str.contains(texto, case=False, regex=False)
+            valores = valores.mask(cumple, f"Con {texto} (solo o con otros problemas)")
+            ya |= cumple
     else:
         valores = pob[ESTRATO.upper()].replace("", "(vacío)").fillna("(vacío)")
     pob.insert(1, estrato, valores)
@@ -335,7 +349,9 @@ resumen.loc[len(resumen)] = ["TOTAL", N, resumen["muestra"].sum(), resumen["rese
                              round(resumen["muestra"].sum() / N * 100, 1)]
 
 metodo = ("Estratificado por " + ESTRATO_COL
-          + (f" (los registros con varios problemas van a '{ESTRATO_VARIOS}')" if ESTRATO_COL == COL_PROBLEMA else "")
+          + (f" (los registros con varios problemas van a '{ESTRATO_VARIOS}'"
+             + (f", salvo los que tienen {', '.join(SEPARAR)}, que van a su propio estrato" if SEPARAR else "") + ")"
+             if ESTRATO_COL == COL_PROBLEMA else "")
           if ESTRATO_COL else "Aleatorio simple")
 if censo:
     metodo += f" + revisión completa de los registros con: {', '.join(COMPLETO)}"
@@ -367,7 +383,7 @@ parametros = pd.DataFrame([
     ("Avisos", " | ".join(avisos) if avisos else "Ninguno"),
     ("Cómo repetir esta muestra",
      f"python muestreo_generico.py \"{ARCHIVO}\"" + (f" {HOJA}" if HOJA else "")
-     + (f" --clave {CLAVE}" if CLAVE else "") + (f' --completo "{",".join(COMPLETO)}"' if COMPLETO else "") + f" --estrato {ESTRATO_COL or 'ninguno'}"
+     + (f" --clave {CLAVE}" if CLAVE else "") + (f' --completo "{",".join(COMPLETO)}"' if COMPLETO else "") + f' --separar "{",".join(SEPARAR)}"' + f" --estrato {ESTRATO_COL or 'ninguno'}"
      + (f" --tamanio {TAMANIO_FIJO}" if TAMANIO_FIJO else f" --confianza {CONFIANZA} --error {ERROR_TOLERABLE} --tasa {TASA_ESPERADA}")
      + (" --por-estrato" if CONCLUIR_POR_ESTRATO else f" --minimo {MINIMO_POR_ESTRATO}")
      + f" --reserva {RESERVA} --semilla {SEMILLA}  (sobre el mismo archivo: comparar la huella)"),
