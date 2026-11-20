@@ -43,6 +43,9 @@ def normalizar(t):
 PATRON_SALDO = re.compile("^(" + "|".join(re.escape(normalizar(t)) for t in TIPOS_SALDO) + ")")
 
 # ---------------------------------------------------------------- 1. LECTURA LÍNEA POR LÍNEA
+# Los listados que salen de un sistema como reporte mezclan registros con líneas de presentación (títulos,
+# separadores, totales). Antes de analizar hay que separar unas de otras sin tirar nada: lo descartado queda
+# en lineas_descartadas.txt con su número de línea y su motivo, para poder justificar cada línea no analizada.
 for codificacion in ("utf-8-sig", "latin-1"):
     try:
         with open(ARCHIVO, encoding=codificacion, newline="") as f:
@@ -98,6 +101,10 @@ no_numericos = {c: int(df["_" + c].isna().sum()) for c in (DEBE, HABER, SALDO)}
 df["ES_SALDO"] = df[TIPO].map(normalizar).str.match(PATRON_SALDO)
 
 # ---------------------------------------------------------------- 2. CONTROL DE SALDO CORRIDO
+# Un saldo corrido se puede recalcular: cada saldo tiene que ser igual al anterior más el debe menos el haber.
+# Recalcularlo fila por fila es un control de integridad: una diferencia indica un movimiento faltante,
+# duplicado o mal imputado, o un saldo mal arrastrado. El control depende del orden del archivo, por eso se
+# marcan las cuentas que aparecen partidas en más de un bloque.
 # En el orden del archivo, dentro de cada cuenta: SALDO = SALDO de la fila anterior + DEBE - HABER.
 # Se controla en todas las filas (también las de saldo); la primera fila de cada cuenta no tiene anterior.
 g = df.groupby(CUENTA, sort=False)
@@ -120,6 +127,9 @@ pd.DataFrame(descartadas, columns=["NRO_LINEA", "MOTIVO", "TEXTO"]).to_csv(
     os.path.join(SALIDA, "lineas_descartadas.txt"), sep="|", index=False, encoding="utf-8")
 
 # ---------------------------------------------------------------- 3. CÓMO VIENEN LAS FILAS DE SALDO
+# Antes de usar las filas de saldo hay que entender cómo están armadas: esta tabla muestra, para cada tipo de
+# fila, en qué columna trae el importe (debe, haber o saldo) y en cuántas cuentas aparece. Un supuesto sobre
+# los datos que no se verifica no es un supuesto: es un riesgo.
 # Para saber en qué columna traen el importe (debe, haber o saldo) cada tipo de fila de saldo
 tipos = df.assign(TIPO_FILA=df[TIPO].where(df["ES_SALDO"], "(movimientos)")).groupby("TIPO_FILA").agg(
     filas=(CUENTA, "size"), cuentas=(CUENTA, "nunique"),
@@ -129,6 +139,8 @@ tipos = df.assign(TIPO_FILA=df[TIPO].where(df["ES_SALDO"], "(movimientos)")).gro
     saldo_no_cierra=("SALDO_NO_CIERRA", "sum"))
 
 # ---------------------------------------------------------------- 4. TOTALES DEL PIE
+# Los totales que imprime el propio reporte son un control cruzado: si no coinciden con la suma de los
+# movimientos, el archivo está incompleto o el reporte calcula otra cosa.
 control_totales = pd.DataFrame()
 if totales_pie:
     numeros = [x for x in totales_pie[1:] if re.fullmatch(r"-?[\d.]*,?\d*-?", x.replace(" ", "")) and x]
@@ -139,6 +151,9 @@ if totales_pie:
     control_totales["diferencia"] = control_totales["según el pie"] - control_totales["suma de los movimientos"]
 
 # ---------------------------------------------------------------- 5. RESUMEN POR CUENTA
+# Cambio de unidad de análisis: de una fila por movimiento a una fila por cuenta, el paso previo para analizar
+# y muestrear cuentas. También se cuentan los valores distintos de titular, CUIT y domicilio dentro de cada
+# cuenta: más de uno indica un cambio de titularidad o un error de carga.
 datos = [c for c in DATOS_CUENTA if c in df.columns]
 gm = movs.groupby(CUENTA, sort=False)
 resumen = pd.DataFrame({
@@ -169,6 +184,7 @@ resumen_txt.to_csv(os.path.join(SALIDA, "resumen_por_cuenta.txt"), sep="|", inde
                    float_format="%.2f")
 
 # ---------------------------------------------------------------- 6. EXCEL Y PANTALLA
+# Todos los controles quedan en control_cuentas.xlsx, una hoja por control, y se resumen en pantalla.
 def excel(t):
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     return t.map(lambda v: ILLEGAL_CHARACTERS_RE.sub("�", v) if isinstance(v, str) else v)

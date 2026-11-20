@@ -1,7 +1,12 @@
 """
 Informe HTML con gráficos interactivos (Plotly) para cualquier archivo de texto delimitado.
-Corre primero el análisis de analisis_generico.py (deben estar en la misma carpeta) y arma el informe
-con lo que ese análisis detectó: no hace falta correr los dos por separado.
+Ejecuta el análisis de analisis_generico.py (deben estar en la misma carpeta) y presenta sus resultados de
+forma visual: no hace falta correr los dos por separado.
+
+Un buen informe exploratorio va de lo general a lo particular: primero cuánto confiar en los datos (calidad),
+después la forma del importe, cómo se reparte entre grupos y a lo largo del tiempo, y al final las tablas de
+detalle. Cada gráfico lleva, debajo del título, una explicación de cómo leerlo. Todos son interactivos: al
+pasar el mouse se ven los valores, y se puede hacer zoom arrastrando.
 
 Uso:   python informe_generico.py archivo.txt [mismas opciones que analisis_generico.py]
        (--monto, --sujeto, --categorias, --anio, --fecha, --excluir, --ignorar, --duplicados, --sep)
@@ -41,7 +46,7 @@ positivos = df.loc[df[MONTO] > 0, MONTO] if MONTO else pd.Series(dtype=float)
 HAY_MONTO = len(positivos) > 0
 # Campos que identifican a un registro: se muestran al pasar el mouse sobre un punto
 CLAVES = (A.ids + A.codigos)[:3] or list(crudo.columns[:2])
-# En la dispersión también se muestran el grupo y la subcategoría (como CLASE / CATEGORIA en el original)
+# En la dispersión también se muestran el grupo y la subcategoría, para ubicar cada punto
 CLAVES_PUNTO = CLAVES + [c for c in (GRUPO, SUBCAT) if c and c not in CLAVES]
 hover_punto = "<br>".join(f"{esc(c)}: %{{customdata[{i}]}}" for i, c in enumerate(CLAVES_PUNTO))
 hover_claves = "<br>".join(f"{esc(c)}: %{{customdata[{i}]}}" for i, c in enumerate(CLAVES))
@@ -58,6 +63,10 @@ def agregar(titulo, explicacion, fig, alto=430):
     graficos.append((titulo, explicacion, fig))
 
 # ---------------------------------------------------------------- 1. GRÁFICOS DEL IMPORTE
+# Tres miradas al importe: su distribución (histograma en escala logarítmica, donde una distribución muy
+# asimétrica se ve como una campana), su concentración (curva de Pareto con los estratos superpuestos) y la
+# comparación entre estratos (% de registros contra % del importe). Los gráficos se arman con datos ya
+# resumidos (conteos, percentiles), así el archivo pesa lo mismo con mil registros que con millones.
 # Todos se arman con datos ya resumidos (conteos, cuartiles, muestras): el HTML pesa lo mismo
 # con 5 mil que con 5 millones de registros.
 def histograma_log(serie, nombre):
@@ -131,6 +140,11 @@ if HAY_MONTO:
                 "(asignación de Neyman) está en la tabla de estratos, al final.", fig)
 
 # ---------------------------------------------------------------- 2. CATEGORÍAS
+# Para cada categoría, barras de cantidad e importe lado a lado, y diagramas de caja. La caja abarca el 50%
+# central de los importes y la línea interior es la mediana: si las cajas de distintos grupos están a alturas
+# muy diferentes, la categoría explica parte de la variabilidad y sirve para estratificar. Los atípicos se
+# calculan sobre el logaritmo del importe: con datos tan asimétricos, la regla de 1,5 rangos intercuartílicos
+# en escala común marcaría como atípicos a miles de importes altos pero normales.
 def caja_con_atipicos(campo, valores):
     """Cajas por categoría. Los atípicos se calculan sobre el logaritmo del importe: con importes tan
     asimétricos, la regla 1,5*IQR en escala lineal marcaría como atípicos a miles de importes altos normales."""
@@ -189,6 +203,10 @@ for campo in A.categorias[:MAX_CAMPOS]:
                     f"distintas, {campo} sirve para estratificar. Hasta 10 valores y {MAX_ATIPICOS} atípicos por caja.", fig)
 
 # ---------------------------------------------------------------- 3. FECHAS Y AÑOS
+# Registros por año y dispersión del importe en el tiempo. Un pico aislado en la cantidad de registros suele
+# ser una carga masiva o una migración de sistema, no un fenómeno real. En la dispersión se dibujan como máximo
+# 20.000 puntos (siempre los importes más altos, y una muestra al azar del resto) para que el navegador no se
+# vuelva lento; los años, que son enteros, se desplazan un poco al azar para que los puntos no se superpongan.
 def muestra_dispersion(base):
     """Devuelve como mucho MAX_PUNTOS registros: siempre los 1.000 importes más altos + una muestra del resto."""
     if len(base) <= MAX_PUNTOS:
@@ -236,7 +254,10 @@ for campo in (A.fechas + A.anios)[:MAX_CAMPOS]:
                 "Pasá el mouse sobre un punto raro para identificarlo. Podés hacer zoom arrastrando." + nota, fig)
 
 # ---------------------------------------------------------------- 3 bis. AÑO DE ORIGEN Y FECHA DE ALTA
-# (equivalen a AÑO_FABRICACION y FECHA_ALTA del informe original)
+# Cuando hay un año de origen (de fabricación, de construcción) y una fecha de alta, la diferencia entre ambos
+# es la antigüedad al darse de alta. Tres gráficos: cuándo se originaron y cuándo se dieron de alta los
+# registros, cómo se reparte la antigüedad en las altas de cada año, y si la subcategoría cambia según la
+# antigüedad. Un alta anterior al origen es imposible y se muestra aparte, en rojo.
 if A.PAR:
     AO, FA = A.ANIO_ORIGEN, A.FECHA_ALTA
     alta_ok = df[FA].where(df[FA].between(pd.Timestamp(1900, 1, 1), A.hoy))
@@ -347,6 +368,8 @@ if A.PAR:
                     "cómo se asigna al darse de alta.", fig)
 
 # ---------------------------------------------------------------- 4. OTRAS MEDIDAS Y BENFORD
+# Distribución de los demás campos numéricos y comparación del primer dígito del importe con la ley de Benford
+# (qué mide y cuándo es confiable está explicado en analisis_generico.py, sección 9).
 for campo in [c for c in A.medidas if c != MONTO][:3]:
     v = df.loc[df[campo] > 0, campo]
     if len(v) >= 20:
@@ -370,6 +393,10 @@ if HAY_MONTO and A.benford is not None:
                                      "comparación es poco confiable." if ordenes < 2 else ""), fig)
 
 # ---------------------------------------------------------------- 5. CALIDAD DE LOS DATOS (va al principio)
+# Se arma ahora pero se muestra primero: antes de mirar cualquier gráfico, el lector tiene que saber cuánto
+# confiar en los datos y qué registros quedaron afuera de cada gráfico. La matriz de completitud tiene un campo
+# por fila y un control por columna, con un código de color: verde sin casos, amarillo menos del 1% de los
+# registros, rojo 1% o más. Debajo, cada control de consistencia con una explicación de qué detecta.
 def celda(casos, pct):
     if casos == 0:
         return "<td class='c ok'>✓</td>"
@@ -448,6 +475,8 @@ casos_con_problemas.txt y, campo por campo, en las hojas CAMPO_ del Excel. Un mi
 <h3>Consistencia</h3><div class='scroll'>{lista}</div>{excluidos}</section>"""
 
 # ---------------------------------------------------------------- 6. TABLAS
+# Las tablas de detalle van al final: la clasificación de los campos (para verificarla), el marco de muestreo,
+# los estratos y la estadística de los campos numéricos.
 def tabla_html(t, titulo, nota=""):
     if t is None or len(t) == 0:
         return ""
@@ -465,6 +494,8 @@ if MONTO:
 tablas_html += tabla_html(A.tablas.get("ESTADISTICA_NUMERICOS"), "Estadística de los campos numéricos")
 
 # ---------------------------------------------------------------- 7. ARMADO DEL HTML
+# Todo se escribe en un único archivo HTML, con la librería de gráficos incluida: se abre sin internet y se
+# puede enviar por correo como cualquier adjunto.
 kpis = [("Registros", fmt(N)), ("Campos", str(len(crudo.columns)))]
 if SUJETO:
     kpis.append((f"Sujetos ({SUJETO})", fmt(df[SUJETO].nunique())))

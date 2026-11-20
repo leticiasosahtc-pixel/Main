@@ -1,7 +1,23 @@
 """
-Análisis exploratorio genérico de un archivo de texto delimitado, orientado a preparar un muestreo.
-Hace el mismo análisis que analisis_bd.py, pero sin conocer las columnas de antemano: detecta separador,
-tipo y rol de cada campo y adapta los controles, tablas y gráficos.
+Análisis exploratorio de datos (EDA) genérico de un archivo de texto delimitado, orientado a preparar un
+muestreo de auditoría. No necesita conocer las columnas de antemano: detecta el separador, el tipo y el rol
+de cada campo, y adapta los controles, las tablas y los gráficos.
+
+Un análisis exploratorio responde, en este orden: ¿qué datos tengo?, ¿cuánto puedo confiar en ellos?, ¿cómo
+se distribuyen? y ¿cómo conviene dividirlos para revisarlos? Cada número coincide con una sección del código:
+   1. Carga              leer el archivo tal cual vino, sin perder información
+   2. Tipos y roles      decidir qué es cada campo: importe, categoría, fecha, identificador...
+   3. Calidad            controles de completitud y de consistencia
+   4. Casos              listado de registros con problemas (la población a muestrear)
+   5. Estadística        centro, dispersión, asimetría, atípicos y concentración del importe
+   6. Categorías         cómo se reparten la cantidad y el importe entre grupos
+   7. Sujetos            concentración por titular o contribuyente
+   8. Fechas             rangos válidos y evolución en el tiempo
+   9. Benford            razonabilidad del primer dígito de los importes
+  10. Marco y estratos   qué parte de la población es muestreable y cómo dividirla
+  11. Gráficos           versiones .png para los papeles de trabajo
+  12. Por campo          una ficha por campo en el Excel
+  13. Exportar           Excel y resumen de texto
 
 Uso:   python analisis_generico.py archivo.txt [opciones]
   --monto COLUMNA        campo de importe sobre el que se va a muestrear
@@ -80,6 +96,10 @@ def excel(t):
     return t
 
 # ---------------------------------------------------------------- 1. CARGA
+# Primer principio del análisis de datos: no alterar la fuente. Todo se lee como texto para que pandas no
+# "interprete" nada por su cuenta: un código 00123 no se convierte en 123 y una fecha mal cargada no desaparece.
+# Se guarda una copia intacta (crudo) para auditar siempre sobre el valor original, y se distingue el dato real
+# de los vacíos y de los textos de relleno (S/D, NULL, -), que parecen datos pero no lo son.
 def tiene_nulos(ruta):
     """True si el archivo tiene caracteres nulos (byte 0)."""
     with open(ruta, "rb") as f:
@@ -136,6 +156,16 @@ if N == 0:
     raise SystemExit("El archivo no tiene registros.")
 
 # ---------------------------------------------------------------- 2. TIPO Y ROL DE CADA CAMPO
+# El tipo dice cómo está escrito un dato (número, fecha, texto); el rol dice qué significa y cómo analizarlo:
+#   medida         cantidad o importe: se suma, se promedia, se estratifica
+#   categoría      pocos valores que agrupan registros (una clase, un tratamiento)
+#   código         muchos valores que se repiten (un código de sujeto, una descripción)
+#   identificador  casi un valor distinto por registro (un número de objeto): no se suma ni se grafica
+#   año / fecha    ejes temporales
+# Un número no siempre es una medida: un DNI o un código de 6 dígitos son números que no tiene sentido sumar.
+# Por eso el rol se decide mirando la forma de los datos (cuántos valores distintos hay, si tienen decimales o
+# ceros a la izquierda) y no solo si se pueden convertir. La clasificación es automática: verificala siempre en
+# la tabla CAMPOS DETECTADOS y corregila con los parámetros cuando haga falta.
 avisos = list(avisos_carga)
 
 def a_numero(s, campo=None):
@@ -228,21 +258,21 @@ if not MONTO and medidas:
     MONTO = max(medidas, key=puntaje)
     avisos.append(f"Campo de importe elegido automáticamente: {MONTO}. Si no es el correcto: --monto COLUMNA.")
 
-# Sujeto (equivale a ID_SUJETO en analisis_bd.py)
+# Sujeto: quien responde por el registro (titular, contribuyente). Se reconoce por el nombre del campo.
 SUJETO = columna(args.sujeto, "--sujeto")
 if not SUJETO:
     SUJETO = next((c for c in codigos + ids if PISTA_SUJETO.search(c)), None)
     if SUJETO:
         avisos.append(f"Campo de sujeto elegido automáticamente: {SUJETO}. Si no es el correcto: --sujeto COLUMNA.")
 
-# Grupo y subcategoría (equivalen a CLASE y CATEGORIA)
+# Grupo y subcategoría: las dos categorías principales (por ejemplo, una clase y una categoría dentro de ella)
 GRUPO = categorias[0] if categorias else None
 SUBCAT = categorias[1] if len(categorias) > 1 else None
 if not ORDEN_CAT and GRUPO:
     avisos.append(f"Categorías principales tomadas por orden de columna: grupo = {GRUPO}"
                   + (f", subcategoría = {SUBCAT}" if SUBCAT else "") + ". Para cambiarlas: --categorias A,B.")
 
-# Año de origen y fecha de alta (equivalen a AÑO_FABRICACION y FECHA_ALTA). Solo se emparejan solos si el nombre
+# Año de origen y fecha de alta (por ejemplo, año de fabricación y fecha de alta). Solo se emparejan solos si el nombre
 # del año indica un origen: comparar una fecha de alta con, por ejemplo, un año de período daría falsos errores.
 if not ANIO_ORIGEN:
     cand_a = [c for c in anios if PISTA_ORIGEN.search(c)]
@@ -277,6 +307,13 @@ log("(rol: medida = cantidad/importe; categoría = pocos valores; código = much
     "identificador = casi único)")
 
 # ---------------------------------------------------------------- 3. CALIDAD DE DATOS
+# Antes de analizar hay que saber cuánto confiar en los datos. Hay dos familias de controles:
+#   Completitud    ¿el dato está?      vacío, texto de relleno, cero, valor que no se puede convertir
+#   Consistencia   ¿el dato es posible? negativos, años imposibles, fechas futuras, valores que no deberían
+#                                       repetirse, filas idénticas, altas anteriores al origen, caracteres
+#                                       invisibles
+# Todos los controles se listan aunque den 0 casos: en auditoría, "no encontré nada" solo vale si queda
+# constancia de que se buscó.
 no_convertible = pd.DataFrame({c: con_dato[c] & (numerico[c].isna() if tipo[c] == "número" else
                                                  df[c].isna() if tipo[c] == "fecha" else False)
                                for c in crudo.columns}, index=crudo.index)
@@ -325,6 +362,10 @@ log("\nControles de completitud y consistencia:")
 log(tabla_ctrl.to_string(index=False))
 
 # ---------------------------------------------------------------- 4. CASOS CON PROBLEMAS (entrada para muestreo)
+# Cada registro con al menos un problema se lista una sola vez, con todos sus problemas en la columna PROBLEMA
+# ("CAMPO: control; CAMPO: control"). Ese archivo es la población de la que después se extrae la muestra.
+# El segundo listado deja afuera los problemas de ciertos campos (por defecto, el sujeto), para cuando esos
+# problemas se tratan por separado y no deben agrandar la población a revisar.
 # Una fila por registro con TODOS sus problemas en la columna PROBLEMA (separados por "; "),
 # con el nombre completo del control (ej. "CATEGORIA: vacío") para saber de qué campo es cada problema.
 def exportar_casos(nombre_archivo, campos_excluidos=()):
@@ -348,6 +389,12 @@ if EXCLUIDOS:   # segundo listado sin los problemas de esos campos
     exportar_casos("casos_con_problemas_sin_" + "_".join(EXCLUIDOS) + ".txt", EXCLUIDOS)
 
 # ---------------------------------------------------------------- 5. ESTADÍSTICA
+# Describir una distribución es responder tres preguntas: dónde está el centro (media, mediana), cuánto se
+# dispersa (desvío, coeficiente de variación) y qué forma tiene (asimetría, percentiles). En importes
+# tributarios la media suele ser mucho mayor que la mediana: pocos registros grandes "tiran" del promedio.
+# Esa asimetría es la razón para estratificar: una muestra simple casi nunca tomaría los importes grandes.
+#   Atípicos       criterio de Tukey extremo: más de 3 rangos intercuartílicos por encima del tercer cuartil
+#   Concentración  qué porcentaje de los registros explica el 80% del importe (curva de Pareto)
 tablas = {}
 cuantitativos = medidas + anios
 if cuantitativos:
@@ -383,6 +430,10 @@ if MONTO:
         log(f"El 80% del importe lo explican {n80:,} registros ({n80 / len(orden) * 100:.1f}% de los positivos)")
 
 # ---------------------------------------------------------------- 6. CATEGORÍAS
+# Para cada categoría se comparan dos pesos: el % de los registros y el % del importe. Si un grupo tiene el 10%
+# de los registros y el 40% del importe, concentra registros caros y puede merecer un estrato propio. Las
+# categorías con menos de 30 registros no sirven solas como estrato: conviene agruparlas. El cruce grupo x
+# subcategoría deja ver combinaciones vacías o inesperadas.
 if categorias:
     log("\n--- DISTRIBUCIÓN POR CATEGORÍAS ---")
 for c in categorias:
@@ -419,6 +470,9 @@ for c in codigos:       # códigos (descripciones, dominios, etc.): valores más
         f"máximo {t['registros'].max():,} (top 30 en el Excel)")
 
 # ---------------------------------------------------------------- 7. SUJETOS
+# El sujeto es quien responde por los registros. Contar cuántos registros y cuánto importe tiene cada uno mide
+# la concentración: si pocos sujetos explican gran parte del importe, revisarlos puede rendir más que
+# muestrear al azar.
 suj = None
 if SUJETO:
     log(f"\n--- SUJETOS ({SUJETO}) ---")
@@ -434,6 +488,9 @@ if SUJETO:
     tablas["TOP_SUJETOS"] = suj.head(50)
 
 # ---------------------------------------------------------------- 8. FECHAS
+# El rango de fechas es un control en sí mismo: un mínimo en 1900 o un máximo en el futuro suelen ser valores
+# por defecto del sistema o errores de carga. La cantidad de registros por año deja ver cargas masivas o
+# cambios de sistema, que conviene conocer antes de muestrear.
 if fechas or anios:
     log("\n--- FECHAS ---")
 for c in anios:
@@ -445,6 +502,10 @@ for c in fechas:
         tablas[f"POR_AÑO_{c}"] = df[c].dt.year.value_counts().sort_index().rename_axis("año").to_frame("cantidad")
 
 # ---------------------------------------------------------------- 9. BENFORD (primer dígito)
+# La ley de Benford dice que, en muchos conjuntos de importes que abarcan varios órdenes de magnitud, el primer
+# dígito es 1 en un 30% de los casos y 9 en menos del 5%. Un desvío es una señal para investigar, no una prueba
+# de error: los importes calculados con alícuotas fijas, tablas o topes no tienen por qué cumplirla. Con menos
+# de 2 órdenes de magnitud (por ejemplo, todos los importes entre 1.000 y 50.000) la comparación no es confiable.
 if acum is not None:
     d1 = np.floor(pos / 10 ** np.floor(np.log10(pos))).astype(int).clip(1, 9)
     benford = pd.DataFrame({"observado_%": d1.value_counts(normalize=True).reindex(range(1, 10), fill_value=0) * 100})
@@ -458,6 +519,13 @@ if acum is not None:
     log(benford.round(2).to_string())
 
 # ---------------------------------------------------------------- 10. MARCO Y ESTRATOS PARA EL MUESTREO
+# El marco de muestreo es la lista de la que se puede extraer la muestra. En un muestreo por importe, los
+# registros con importe cero, negativo o vacío nunca saldrían elegidos: deben tratarse como poblaciones aparte.
+# Estratificar es dividir la población en grupos homogéneos y muestrear cada uno por separado: con la misma
+# cantidad de casos se gana precisión. Los cortes (mediana, percentil 90 y límite de atípicos) separan muchos
+# registros chicos de pocos registros grandes; el último estrato suele revisarse completo.
+# La asignación de Neyman reparte la muestra en proporción a cantidad x desvío de cada estrato: donde hay más
+# variabilidad se necesitan más casos para estimar con la misma precisión.
 if MONTO:
     log("\n--- MARCO DE MUESTREO ---")
     marco = pd.DataFrame({"registros": [N, m.gt(0).sum(), m.eq(0).sum(), m.lt(0).sum(), N - len(m)],
@@ -493,6 +561,8 @@ if avisos:
         log("* " + a)
 
 # ---------------------------------------------------------------- 11. GRÁFICOS (.png)
+# Versiones estáticas para pegar en papeles de trabajo. Los importes se grafican también en escala logarítmica:
+# cuando van de cientos a millones, en escala común casi todo queda aplastado contra el cero.
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -565,6 +635,10 @@ if plt:
             guardar(f"09_importe_vs_{c.lower()}.png")
 
 # ---------------------------------------------------------------- 12. ANÁLISIS POR CAMPO (una pestaña por campo)
+# Una ficha por campo, como la que haría un analista a mano: cuántos datos tiene, cuántos valores distintos,
+# cuáles son los más frecuentes y qué formatos aparecen. El formato reemplaza cada letra por A y cada número
+# por 9 (AB123CD -> AA999AA): si casi todo es AA999AA y unos pocos son 9999, esos pocos merecen una mirada.
+# Al final de la ficha, la lista completa de registros con problemas en ese campo.
 def patron(serie):
     """Convierte cada valor en su formato: AB123CD -> AA999AA (A = letra, 9 = número)."""
     return (serie.str.upper().str.replace(r"[A-ZÑÁÉÍÓÚÜ]", "A", regex=True)
@@ -653,6 +727,7 @@ def escribir_hoja_campo(xl, campo):
         ws.column_dimensions[col].width = ancho
 
 # ---------------------------------------------------------------- 13. EXPORTAR
+# Todo queda en un Excel (una hoja por tabla) y en resumen.txt, que guarda lo mismo que se muestra en pantalla.
 log("\nEscribiendo el Excel (con muchos registros con problemas puede tardar varios minutos)...")
 with pd.ExcelWriter(ruta_salida("tablas_analisis.xlsx"), engine="openpyxl") as xl:
     excel(campos).to_excel(xl, sheet_name=hoja("CAMPOS"))

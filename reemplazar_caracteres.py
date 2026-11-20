@@ -4,11 +4,19 @@ El resto del archivo queda exactamente igual.
 
 Uso:   python reemplazar_caracteres.py archivo.txt DESCRIPCION
 Salida: archivo_depurado.txt (el original no se modifica)
+
+Depurar no es borrar: se reemplazan caracteres concretos en un campo concreto, se cuenta cada reemplazo y el
+archivo original queda intacto para poder comparar. Las líneas que no tienen la cantidad de campos esperada
+no se tocan: en ellas no se sabe dónde termina un campo y empieza el siguiente, y corregirlas a ciegas podría
+mover datos de una columna a otra. Se informan para revisarlas a mano.
 """
 import re
 import sys
 
 # ---------------------------------------------------------------- QUÉ REEMPLAZAR (modificar acá)
+# Cada par es "lo que hay": "lo que va". Para eliminar un carácter, reemplazalo por "". Los caracteres de
+# control son invisibles (nulos, tabulaciones verticales, etc.): suelen venir de exportaciones defectuosas y
+# hacen fallar a otros programas, como Excel.
 REEMPLAZOS = {
     ";": ",",
     '"': "'",

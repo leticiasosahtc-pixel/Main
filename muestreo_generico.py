@@ -1,7 +1,14 @@
 """
 Muestreo aleatorio para auditoría sobre una lista de registros (por ejemplo, los casos con problemas que
-deja analisis_generico.py). Hace lo mismo que muestreo.py, pero sin nombres de columnas fijos: detecta el
-separador y la columna que identifica a cada registro.
+deja analisis_generico.py). No necesita nombres de columnas fijos: detecta el separador y cómo identificar a
+cada registro.
+
+Muestrear es revisar una parte para concluir sobre el todo. Para que esa conclusión valga, la muestra tiene
+que ser:
+  aleatoria       cada registro tiene una probabilidad conocida de salir y nadie elige los casos a mano
+  suficiente      el tamaño sale de una fórmula, según la confianza y el error que se aceptan
+  reproducible    con el mismo archivo, los mismos parámetros y la misma semilla sale la misma muestra
+Todo queda documentado en la hoja PARAMETROS del Excel, incluido el comando para repetir la muestra.
 
 Uso:
     python muestreo_generico.py                                       (usa el listado de casos de salida_analisis)
@@ -38,6 +45,12 @@ import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------- PARÁMETROS (valores por defecto)
+# En un muestreo de atributos cada caso se clasifica como correcto o con error, y el tamaño de muestra depende
+# de cuatro decisiones:
+#   confianza          qué tan seguro querés estar de que la muestra representa a la población (95% es lo usual)
+#   error tolerable    cuánto puede apartarse la tasa de error de la muestra de la real (±9 puntos, por ejemplo)
+#   tasa esperada      cuántos errores esperás encontrar; 50% es el supuesto más conservador (la muestra más grande)
+#   semilla            número que fija la secuencia aleatoria: misma semilla y mismo archivo, misma muestra
 CONFIANZA = 0.95          # nivel de confianza (0.90, 0.95, 0.99)
 ERROR_TOLERABLE = 0.09    # margen de error aceptado (0.06 = ±6 puntos porcentuales)
 TASA_ESPERADA = 0.50      # % de errores que se espera encontrar; 0.50 es lo más conservador
@@ -124,6 +137,9 @@ def excel(t):
     return t
 
 # ---------------------------------------------------------------- 1. LECTURA
+# Lee un texto delimitado o una pestaña del Excel del análisis. Cada fila recibe FILA_EN_ARCHIVO, su número de
+# línea en el archivo de origen, para que el auditor pueda ubicar el caso. La huella SHA-256 es una "firma" del
+# archivo: si alguien lo modifica después del muestreo, la huella cambia y se nota.
 def leer(archivo, hoja):
     """Devuelve la tabla y el número de fila del archivo donde empieza el primer registro."""
     if archivo.lower().endswith((".xlsx", ".xlsm", ".xls")):
@@ -172,6 +188,11 @@ with open(ARCHIVO, "rb") as f:
 huella = sha.hexdigest()
 
 # ---------------------------------------------------------------- 1 bis. CLAVE: QUÉ IDENTIFICA A UN REGISTRO
+# La unidad de muestreo es el registro, no la fila. Si un mismo registro aparece en varias filas (por ejemplo,
+# una por problema), hay que juntarlas: si no, ese registro tendría más chances de salir que los demás. Sin
+# --clave solo se juntan filas idénticas (salvo la columna PROBLEMA): dos registros con el mismo identificador
+# pero datos distintos son registros distintos y los dos tienen que poder salir. Con --clave se juntan todas
+# las filas que comparten el valor de esa columna.
 datos = [c for c in pob.columns if c not in ("FILA_EN_ARCHIVO", COL_PROBLEMA)]
 
 distintas = pob.drop_duplicates(datos)     # un registro repetido en varias filas (una por problema) cuenta una vez
@@ -241,7 +262,11 @@ if tiene_problema:
                pob[COL_PROBLEMA].str.count(";") + 1)
 varios = int((pob["CANT_PROBLEMAS"] > 1).sum()) if tiene_problema else 0
 
-# Estrato de cada registro: su problema, o "Más de un problema" si tiene varios
+# Estrato de cada registro: su problema, o "Más de un problema" si tiene varios.
+# Estratificar es dividir la población en grupos y muestrear dentro de cada uno: así cada tipo de problema
+# queda representado, aunque sea poco frecuente. Los problemas indicados en SEPARAR (por defecto, los
+# duplicados) forman su propio estrato aunque el registro tenga otros problemas, porque se revisan de otra
+# manera: comparando el registro con los demás que comparten el valor.
 estrato = None
 if ESTRATO and ESTRATO.upper() in pob.columns:
     estrato = "ESTRATO"
@@ -307,6 +332,13 @@ if COMPLETO:
         avisos.append(f"--completo: ningún registro tiene en PROBLEMA el texto {', '.join(sin)}.")
 
 # ---------------------------------------------------------------- 2. TAMAÑO DE MUESTRA
+# Fórmula del muestreo de atributos:  n0 = z² · p · (1 - p) / e²
+#   z  sale del nivel de confianza (1,96 para 95%)    p  tasa esperada    e  error tolerable
+# Con poblaciones chicas se aplica la corrección por población finita:  n = n0 / (1 + (n0 - 1) / N)
+# Ejemplo: 95% de confianza, ±9% y p = 50% dan n0 = 119; con N = 10.000 queda n = 118, con N = 500, n = 96.
+# Reparto entre estratos: proporcional al tamaño de cada uno (método del mayor resto, para que los redondeos
+# sumen exactamente n), con un mínimo de casos por estrato. Con --por-estrato, en cambio, cada estrato recibe
+# una muestra suficiente por sí sola: son más casos, pero permite sacar una conclusión sobre cada estrato.
 z = NormalDist().inv_cdf((1 + CONFIANZA) / 2)
 
 def tamanio(n_pob):
@@ -346,6 +378,9 @@ else:
     asignado = {"(toda la base)": n_objetivo}
 
 # ---------------------------------------------------------------- 3. SELECCIÓN ALEATORIA
+# Dentro de cada estrato se ordenan los registros al azar (con la semilla) y se toman los primeros n. Los que
+# siguen en ese mismo orden forman la reserva: si un caso no se puede verificar, se reemplaza por el primero de
+# la reserva de su estrato, nunca por uno elegido a mano, para no introducir sesgo.
 if SEMILLA is None:
     SEMILLA = secrets.randbelow(10 ** 9)
 azar = np.random.RandomState(SEMILLA)
@@ -418,6 +453,9 @@ parametros = pd.DataFrame([
 ], columns=["parámetro", "valor"])
 
 # ---------------------------------------------------------------- 4. EXPORTAR
+# El Excel es el papel de trabajo: PARAMETROS documenta cómo se hizo la muestra y cómo repetirla,
+# RESUMEN_ESTRATOS cuántos casos salieron de cada estrato, y MUESTRA y RESERVA traen columnas para cargar el
+# resultado. RESULTADO tiene una lista desplegable para que todos lo carguen con las mismas palabras.
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
