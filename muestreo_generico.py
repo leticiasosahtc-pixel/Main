@@ -8,7 +8,10 @@ Uso:
     python muestreo_generico.py archivo.txt                           (texto delimitado)
     python muestreo_generico.py salida_analisis/tablas_analisis.xlsx CAMPO_CATEGORIA   (una pestaña del análisis)
 Opciones (todas opcionales; si no se indican valen los PARÁMETROS de abajo):
-    --clave COLUMNA        identifica un registro (si aparece en varias filas, se muestrea UNA sola vez)
+    --clave COLUMNA        junta en un solo registro todas las filas con el mismo valor de esa columna
+                           (sin --clave solo se juntan filas idénticas, salvo por PROBLEMA)
+    --completo duplicado   los registros cuyo PROBLEMA contiene ese texto entran TODOS en la muestra
+                           (se pueden poner varios separados por coma)
     --estrato COLUMNA      columna para estratificar; "ninguno" = aleatorio simple sobre toda la base
     --confianza 0.95  --error 0.09  --tasa 0.5  --tamanio 60  --minimo 2  --reserva 0.10
     --semilla 123456       ("azar" = semilla al azar, que queda registrada en el Excel)
@@ -39,7 +42,8 @@ CONCLUIR_POR_ESTRATO = False   # True = calcula una muestra suficiente para conc
 MINIMO_POR_ESTRATO = 2    # ningún estrato queda con menos casos (si tiene menos, se toman todos)
 RESERVA = 0.10            # casos extra (10%) para reemplazar los que no se puedan verificar
 SEMILLA = 123456          # semilla fija: con el mismo archivo y parámetros sale siempre la misma muestra
-CLAVE = None              # identifica un registro; None = se detecta (columna única con nombre de identificador)
+CLAVE = None              # columna para juntar filas del mismo registro; None = solo se juntan filas idénticas
+COMPLETO = []             # textos de PROBLEMA cuyos registros se revisan al 100% (ej. ["duplicado"])
 COL_PROBLEMA = "PROBLEMA" # columna con la descripción del problema
 ESTRATO_VARIOS = "Más de un problema"   # estrato para los registros con 2 o más problemas
 PISTA_ID = re.compile(r"^(ID|COD|NRO|NUM|CLAVE)|_ID$|CODIGO|NUMERO|DOMINIO|PATENTE|PARTIDA|CUENTA|INSCRIP|CUIT")
@@ -49,6 +53,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("archivo", nargs="?")
 ap.add_argument("hoja", nargs="?")
 ap.add_argument("--clave")
+ap.add_argument("--completo")
 ap.add_argument("--estrato")
 ap.add_argument("--confianza", type=float)
 ap.add_argument("--error", type=float)
@@ -69,6 +74,8 @@ MINIMO_POR_ESTRATO = MINIMO_POR_ESTRATO if args.minimo is None else args.minimo
 RESERVA = RESERVA if args.reserva is None else args.reserva
 CONCLUIR_POR_ESTRATO = args.por_estrato or CONCLUIR_POR_ESTRATO
 CLAVE = args.clave or CLAVE
+if args.completo is not None:
+    COMPLETO = [t.strip() for t in args.completo.split(",") if t.strip()]
 if args.estrato is not None:
     ESTRATO = None if args.estrato.strip().lower() in ("", "ninguno", "none") else args.estrato
 if args.semilla is not None:
@@ -167,30 +174,28 @@ if CLAVE:
     CLAVE = CLAVE.strip().upper()
     if CLAVE not in pob.columns:
         sys.exit(f"--clave {CLAVE}: no existe. Columnas: {', '.join(datos)}")
-else:
-    # Solo columnas con nombre de identificador y casi únicas. No se elige cualquier columna única: en una tabla
-    # de resumen todas lo son, y un importe con decimales casi nunca se repite pero no identifica a nadie.
-    elegidas = [c for c in datos if PISTA_ID.search(c) and unicidad(c) >= 0.99]
-    if elegidas:
-        CLAVE = max(elegidas, key=lambda c: (unicidad(c), -datos.index(c)))
-        avisos.append(f"Clave elegida automáticamente: {CLAVE} ({unicidad(CLAVE) * 100:.2f}% de valores distintos). "
-                      "Si no identifica a un registro: --clave COLUMNA.")
-
-if CLAVE:
     clave, clave_txt = [CLAVE], CLAVE
-elif tiene_problema:
-    clave = datos
-    clave_txt = "todos los datos del registro (no hay una columna que identifique a cada registro)"
-    avisos.append("No encontré una columna que identifique a cada registro; un registro se considera repetido "
-                  "si coinciden todos sus datos. Si hay una: --clave COLUMNA.")
-else:
-    # Control para no muestrear por error una tabla de resumen: tiene que haber un identificador o la columna PROBLEMA
-    sys.exit(f"No encuentro una columna que identifique a cada registro ni la columna {COL_PROBLEMA}: puede que el "
-             f"archivo no sea una lista de registros.\nColumnas encontradas: {', '.join(datos)}\n"
-             "Si es una lista de registros, indicá cuál los identifica con --clave COLUMNA.")
-if CLAVE and pob[CLAVE].replace("", pd.NA).isna().any():
     vacias = int(pob[CLAVE].replace("", pd.NA).isna().sum())
-    avisos.append(f"{vacias:,} filas tienen la clave {CLAVE} vacía: entre ellas se consideran el mismo registro.")
+    if vacias:
+        avisos.append(f"{vacias:,} filas tienen la clave {CLAVE} vacía: entre ellas se consideran el mismo registro.")
+else:
+    # Sin --clave solo se juntan filas idénticas (un mismo registro listado una vez por problema). Dos registros
+    # con el mismo identificador pero datos distintos son registros distintos: justamente los duplicados que
+    # detecta el análisis, y no se pueden juntar ni perder.
+    clave = datos
+    clave_txt = "todos los datos del registro (solo se juntan filas idénticas, salvo por PROBLEMA)"
+    # Control para no muestrear por error una tabla de resumen: tiene que haber un identificador o la columna PROBLEMA
+    ids = [c for c in datos if PISTA_ID.search(c) and unicidad(c) >= 0.9]
+    if not ids and not tiene_problema:
+        sys.exit(f"No encuentro una columna que identifique a cada registro ni la columna {COL_PROBLEMA}: puede que el "
+                 f"archivo no sea una lista de registros.\nColumnas encontradas: {', '.join(datos)}\n"
+                 "Si es una lista de registros, indicá cuál los identifica con --clave COLUMNA.")
+    for c in ids:
+        valores = distintas[c].replace("", pd.NA).dropna()
+        n = int(valores.duplicated(keep=False).sum())
+        if n:
+            avisos.append(f"{n:,} registros comparten {c} con otro registro de datos distintos: se muestrean como "
+                          f"registros separados. Si en realidad son el mismo registro: --clave {c}.")
 
 # ---------------------------------------------------------------- 1 ter. UN REGISTRO = UNA FILA
 # Si un registro aparece en varias filas (una por problema), se junta en una sola fila con todos
@@ -215,8 +220,8 @@ if repetidos.any():
     pob = pd.concat([pob[~repetidos], juntos[pob.columns]], ignore_index=True)
     avisos.append(f"Se juntaron {repetidos.sum():,} filas repetidas en {len(juntos):,} registros únicos.")
     if datos_distintos:
-        avisos.append(f"{datos_distintos:,} registros tienen datos distintos en sus filas repetidas; se tomó el "
-                      "primero. Conviene revisar el archivo (puede ser una clave duplicada, no el mismo registro).")
+        avisos.append(f"{datos_distintos:,} valores de {clave_txt} tienen datos distintos en sus filas: se juntaron y "
+                      "se tomó la primera fila. Si son registros distintos (una clave duplicada), sacá --clave.")
 N = len(pob)
 
 if tiene_problema:
@@ -238,26 +243,50 @@ elif ESTRATO:
     if args.estrato:
         sys.exit(f"--estrato {ESTRATO}: no existe. Columnas: {', '.join(datos)}")
     avisos.append(f"No existe la columna {ESTRATO}; se hace muestreo aleatorio simple.")
+ESTRATO_COL = ESTRATO.upper() if estrato else None      # columna real de estratificación (None = ninguna)
+
+# Revisión completa: los registros cuyo PROBLEMA contiene alguno de los textos de COMPLETO entran todos
+censo = []
+if COMPLETO:
+    if not tiene_problema:
+        sys.exit(f"--completo: el archivo no tiene la columna {COL_PROBLEMA}.")
+    etiqueta = pd.Series(pd.NA, index=pob.index, dtype="object")
+    for texto in COMPLETO:
+        cumple = etiqueta.isna() & pob[COL_PROBLEMA].str.contains(texto, case=False, regex=False)
+        etiqueta[cumple] = f"Revisión completa: {texto}"
+    if etiqueta.notna().any():
+        if not estrato:
+            estrato = "ESTRATO"
+            pob.insert(1, estrato, "(toda la base)")
+        pob.loc[etiqueta.notna(), estrato] = etiqueta[etiqueta.notna()]
+        censo = sorted(etiqueta.dropna().unique())
+    sin = [t for t in COMPLETO if f"Revisión completa: {t}" not in censo]
+    if sin:
+        avisos.append(f"--completo: ningún registro tiene en PROBLEMA el texto {', '.join(sin)}.")
 
 # ---------------------------------------------------------------- 2. TAMAÑO DE MUESTRA
 z = NormalDist().inv_cdf((1 + CONFIANZA) / 2)
 
 def tamanio(n_pob):
     """Muestreo de atributos con corrección por población finita."""
+    if n_pob == 0:
+        return 0
     if TAMANIO_FIJO:
         return min(TAMANIO_FIJO, n_pob)
     n0 = z ** 2 * TASA_ESPERADA * (1 - TASA_ESPERADA) / ERROR_TOLERABLE ** 2
     return min(n_pob, math.ceil(n0 / (1 + (n0 - 1) / n_pob)))
 
-n_objetivo = tamanio(N)
 if estrato:
     tamanos = pob[estrato].value_counts().sort_index()
+    resto = tamanos.drop(censo)                     # los de revisión completa no entran en el cálculo
+    N_resto = int(resto.sum())
+    n_objetivo = tamanio(N_resto)
     if CONCLUIR_POR_ESTRATO:
-        asignado = {k: tamanio(v) for k, v in tamanos.items()}
+        asignado = {k: tamanio(v) for k, v in resto.items()}
     else:
         # Asignación proporcional al tamaño de cada estrato (método del mayor resto)
-        exacto = {k: n_objetivo * v / N for k, v in tamanos.items()}
-        asignado = {k: min(v, max(MINIMO_POR_ESTRATO, math.floor(exacto[k]))) for k, v in tamanos.items()}
+        exacto = {k: n_objetivo * v / N_resto for k, v in resto.items()}
+        asignado = {k: min(v, max(MINIMO_POR_ESTRATO, math.floor(exacto[k]))) for k, v in resto.items()}
         falta = n_objetivo - sum(asignado.values())
         for k in sorted(exacto, key=lambda k: exacto[k] - math.floor(exacto[k]), reverse=True):
             if falta <= 0:
@@ -267,8 +296,10 @@ if estrato:
                 falta -= 1
         if sum(asignado.values()) > n_objetivo:
             avisos.append(f"El mínimo de {MINIMO_POR_ESTRATO} casos por estrato lleva la muestra de {n_objetivo:,} "
-                          f"a {sum(asignado.values()):,} casos ({len(tamanos):,} estratos).")
+                          f"a {sum(asignado.values()):,} casos ({len(resto):,} estratos).")
+    asignado.update({k: int(tamanos[k]) for k in censo})
 else:
+    n_objetivo = tamanio(N)
     tamanos = pd.Series({"(toda la base)": N})
     asignado = {"(toda la base)": n_objetivo}
 
@@ -303,11 +334,13 @@ resumen["% muestreado"] = (resumen["muestra"] / resumen["poblacion"] * 100).roun
 resumen.loc[len(resumen)] = ["TOTAL", N, resumen["muestra"].sum(), resumen["reserva"].sum(),
                              round(resumen["muestra"].sum() / N * 100, 1)]
 
-metodo = ("Estratificado por " + ESTRATO.upper()
-          + (f" (los registros con varios problemas van a '{ESTRATO_VARIOS}')" if ESTRATO.upper() == COL_PROBLEMA else "")
-          if estrato else "Aleatorio simple")
+metodo = ("Estratificado por " + ESTRATO_COL
+          + (f" (los registros con varios problemas van a '{ESTRATO_VARIOS}')" if ESTRATO_COL == COL_PROBLEMA else "")
+          if ESTRATO_COL else "Aleatorio simple")
+if censo:
+    metodo += f" + revisión completa de los registros con: {', '.join(COMPLETO)}"
 metodo += (" - tamaño suficiente para concluir sobre cada estrato" if estrato and CONCLUIR_POR_ESTRATO
-           else " - asignación proporcional" if estrato else "")
+           else " - asignación proporcional" if ESTRATO_COL else "")
 parametros = pd.DataFrame([
     ("Archivo de población", os.path.abspath(ARCHIVO) + (f" (hoja {HOJA})" if HOJA else "")),
     ("Separador", repr(SEP) if SEP else "No aplica (Excel)"),
@@ -324,6 +357,8 @@ parametros = pd.DataFrame([
     ("Error tolerable", ERROR_TOLERABLE),
     ("Tasa de error esperada", TASA_ESPERADA),
     ("Valor z", round(z, 4)),
+    ("Revisión completa (100%)", f"{sum(int(tamanos[k]) for k in censo):,} registros con {', '.join(COMPLETO)}"
+                                 if censo else "No"),
     ("Mínimo por estrato", MINIMO_POR_ESTRATO if estrato and not CONCLUIR_POR_ESTRATO else "No aplica"),
     ("Reserva", RESERVA),
     ("Semilla aleatoria", SEMILLA),
@@ -332,7 +367,7 @@ parametros = pd.DataFrame([
     ("Avisos", " | ".join(avisos) if avisos else "Ninguno"),
     ("Cómo repetir esta muestra",
      f"python muestreo_generico.py \"{ARCHIVO}\"" + (f" {HOJA}" if HOJA else "")
-     + (f" --clave {CLAVE}" if CLAVE else "") + f" --estrato {ESTRATO.upper() if estrato else 'ninguno'}"
+     + (f" --clave {CLAVE}" if CLAVE else "") + (f' --completo "{",".join(COMPLETO)}"' if COMPLETO else "") + f" --estrato {ESTRATO_COL or 'ninguno'}"
      + (f" --tamanio {TAMANIO_FIJO}" if TAMANIO_FIJO else f" --confianza {CONFIANZA} --error {ERROR_TOLERABLE} --tasa {TASA_ESPERADA}")
      + (" --por-estrato" if CONCLUIR_POR_ESTRATO else f" --minimo {MINIMO_POR_ESTRATO}")
      + f" --reserva {RESERVA} --semilla {SEMILLA}  (sobre el mismo archivo: comparar la huella)"),
